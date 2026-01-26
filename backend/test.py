@@ -11,8 +11,8 @@ from app.services.graph_core.extractor import extract_graph_from_text
 # ================= 配置区 =================
 TEST_PDF_PATH = "ecomic.pdf"  # 请确保根目录有一个 test.pdf
 TEMP_DIR = "temp_test"
-API_KEY = "sk-8a3ed5525e184c49be0cbf4ff4acec25"  # 填入你的 OpenAI 或中转 Key
-BASE_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1" # 如果有中转请填写，如 "https://api.openai-hk.com/v1"
+API_KEY = os.getenv("LLM_API_KEY", "")  # set via env
+BASE_URL = os.getenv("LLM_BASE_URL", "")  # optional proxy base url
 # ==========================================
 
 async def run_validation():
@@ -52,7 +52,11 @@ async def run_validation():
     
     # 截取前 2000 字进行快速测试，节省 Token
     test_text = sample_text[:30000]
-    result = await extract_graph_from_text(test_text, API_KEY, BASE_URL)
+    if not API_KEY:
+        print("❌ 请先设置环境变量 LLM_API_KEY")
+        return
+
+    result = await extract_graph_from_text(test_text, API_KEY, BASE_URL or None)
         
     if "error" in result:
         print(f"❌ LLM 报错: {result['error']}")

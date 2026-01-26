@@ -14,23 +14,27 @@ from pydantic import BaseModel, Field
 
 # 1. 定义输出的数据结构
 # 确保使用 Pydantic v2 语法
+# 实体结构定义
 class Entity(BaseModel):
     name: str = Field(..., description="实体的名称")
     type: str = Field(..., description="实体类型，例如：Person, Location, Technology, Concept, Organization")
     description: str = Field(..., description="关于该实体在文本中的简短描述")
 
+# 关系结构定义
 class Relationship(BaseModel):
     source: str = Field(..., description="源实体名称")
     target: str = Field(..., description="目标实体名称")
     relation: str = Field(..., description="关系描述，例如：author_of, located_in, uses")
     description: str = Field(..., description="关系的上下文证明")
 
+# LLM 输出结构定义
 class GraphOutput(BaseModel):
     entities: List[Entity] = Field(default_factory=list)
     relationships: List[Relationship] = Field(default_factory=list)
     summary: str = Field(..., description="本章节的简短摘要")
 
 # 2. Token 检查器
+# 检测文本是否超过模型 token 限制
 def check_token_safety(text: str, model: str = "qwen-plus", limit: int = 30000) -> bool:
     try:
         encoding = tiktoken.encoding_for_model(model)
@@ -41,6 +45,7 @@ def check_token_safety(text: str, model: str = "qwen-plus", limit: int = 30000) 
     return num_tokens <= limit
 
 # 3. 核心提取函数
+# 调用 LLM 提取实体关系图谱
 async def extract_graph_from_text(text: str, api_key: str, base_url: Optional[str] = None) -> Dict[str, Any]:
     # 安全检查
     if not check_token_safety(text):
@@ -50,6 +55,7 @@ async def extract_graph_from_text(text: str, api_key: str, base_url: Optional[st
         }
 
     # 初始化 LLM (确保 api_key 正确传入)
+    # 初始化 LLM 客户端
     llm = ChatOpenAI(
         model="qwen-plus", 
         temperature=0.1,
@@ -65,6 +71,7 @@ async def extract_graph_from_text(text: str, api_key: str, base_url: Optional[st
     输出必须是合法的 JSON 格式。
     """
 
+    # 输出解析器：确保 JSON 结构符合定义
     parser = JsonOutputParser(pydantic_object=GraphOutput)
 
     prompt = ChatPromptTemplate.from_messages([
@@ -73,10 +80,12 @@ async def extract_graph_from_text(text: str, api_key: str, base_url: Optional[st
     ])
 
     # 声明链式调用
+    # 组装链式调用
     chain = prompt | llm | parser
 
     try:
         # 执行异步调用
+        # 异步调用 LLM
         result = await chain.ainvoke({
             "text": text,
             "format_instructions": parser.get_format_instructions()
