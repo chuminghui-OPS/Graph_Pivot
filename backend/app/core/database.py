@@ -13,6 +13,8 @@ class Base(DeclarativeBase):
 
 # 创建数据库引擎（SQLite）
 def _build_engine():
+    if settings.database_url:
+        return create_engine(settings.database_url, future=True, pool_pre_ping=True)
     settings.ensure_dirs()
     return create_engine(
         f"sqlite:///{settings.sqlite_path}",
@@ -32,6 +34,8 @@ def init_db() -> None:
     from app.models import book, chapter, chunk, graph  # noqa: F401
 
     Base.metadata.create_all(bind=engine)
+    if engine.dialect.name != "sqlite":
+        return
     with engine.begin() as conn:
         columns = {row[1] for row in conn.execute(text("PRAGMA table_info(chapters)"))}
         if "processing_started_at" not in columns:

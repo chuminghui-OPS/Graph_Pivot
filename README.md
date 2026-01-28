@@ -87,6 +87,58 @@ npm run dev
 http://localhost:3000
 ```
 
+## Docker + Supabase 部署（域名）
+
+### 1) 准备 Supabase 数据库
+
+在 Supabase 项目中获取连接串（Settings -> Database -> Connection string），示例：
+
+```
+postgresql://postgres:YOUR_PASSWORD@YOUR_PROJECT.supabase.co:5432/postgres?sslmode=require
+```
+
+### 2) 配置环境变量
+
+后端：
+
+```
+copy backend\.env.example backend\.env
+```
+
+在 `backend/.env` 中设置：
+
+- `DATABASE_URL` 为 Supabase 连接串
+- `CORS_ORIGINS=https://你的域名`
+- `LLM_API_KEY` 等模型配置
+
+前端（Docker 构建时注入）：
+
+```
+copy .env.docker.example .env
+```
+
+把 `NEXT_PUBLIC_API_BASE` 改为 `https://你的域名`
+
+### 3) 配置 Nginx
+
+编辑 `deploy/nginx.conf`，把：
+
+```
+server_name your-domain.com;
+```
+
+改成你的域名。
+
+### 4) 启动
+
+```
+docker compose up -d --build
+```
+
+### 5) HTTPS（可选但建议）
+
+可用 Nginx + Certbot 或者把域名接入云厂商的 HTTPS 负载均衡。
+
 ## 操作流程（从 0 到 1）
 
 1) 打开前端页面 `http://localhost:3000`  
@@ -116,6 +168,7 @@ LLM_MODEL=qwen-plus
 GEMINI_API_KEY=
 GEMINI_MODEL=gemini-3-flash-preview
 LLM_MAX_TOKENS=30000
+DATABASE_URL=postgresql://postgres:YOUR_PASSWORD@YOUR_PROJECT.supabase.co:5432/postgres?sslmode=require
 CELERY_BROKER_URL=redis://localhost:6379/0
 CELERY_RESULT_BACKEND=redis://localhost:6379/1
 CORS_ORIGINS=http://localhost:3000

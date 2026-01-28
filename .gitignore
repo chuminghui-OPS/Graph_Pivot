@@ -2,3 +2,15 @@
 frontend/node_modules/
 
 data/
+
+# env files
+.env
+backend/.env
+frontend/.env.local
+
+# python cache
+__pycache__/
+*.pyc
+
+# next build
+frontend/.next/

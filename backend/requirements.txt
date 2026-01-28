@@ -3,6 +3,7 @@ uvicorn[standard]
 celery
 redis
 sqlalchemy
+psycopg2-binary
 pydantic
 pydantic-settings
 python-multipart

@@ -11,6 +11,7 @@ class Settings(BaseSettings):
     upload_dir: str = "data/uploads"
     md_dir: str = "data/markdown"
     sqlite_path: str = "data/app.db"
+    database_url: str | None = None
 
     celery_broker_url: str = "redis://localhost:6379/0"
     celery_result_backend: str = "redis://localhost:6379/1"
@@ -41,7 +42,12 @@ class Settings(BaseSettings):
 
     # 确保运行时数据目录存在
     def ensure_dirs(self) -> None:
-        for path in (self.data_dir, self.upload_dir, self.md_dir, os.path.dirname(self.sqlite_path)):
+        for path in (
+            self.data_dir,
+            self.upload_dir,
+            self.md_dir,
+            os.path.dirname(self.sqlite_path),
+        ):
             if path:
                 os.makedirs(path, exist_ok=True)
 
