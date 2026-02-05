@@ -15,7 +15,7 @@ import {
   fetchBookPdfUrl,
   KnowledgeGraph
 } from "../lib/api";
-import { supabase } from "../lib/supabase";
+import { getSupabaseClient, hasSupabaseConfig } from "../lib/supabase";
 
 const PROGRESS_STEPS = [
   { start: 0, end: 20, duration: 5_000 },
@@ -73,9 +73,15 @@ export default function Home() {
   const fastForwardTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [pdfUrl, setPdfUrl] = useState<string | null>(null);
   const [authReady, setAuthReady] = useState(false);
+  const hasConfig = hasSupabaseConfig();
 
   useEffect(() => {
     let mounted = true;
+    const supabase = getSupabaseClient();
+    if (!supabase) {
+      setAuthReady(true);
+      return;
+    }
     supabase.auth
       .getSession()
       .then(({ data }) => {
@@ -421,6 +427,9 @@ export default function Home() {
           </div>
         </div>
       </header>
+      {!hasConfig ? (
+        <div className="error-banner">缺少 Supabase 配置，请检查环境变量。</div>
+      ) : null}
       {error ? <div className="error-banner">{error}</div> : null}
       {bookId ? (
         <div className="progress-card">

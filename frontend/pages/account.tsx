@@ -11,7 +11,7 @@ import {
   fetchUserProfile,
   updateAsset
 } from "../lib/api";
-import { supabase } from "../lib/supabase";
+import { getSupabaseClient, hasSupabaseConfig } from "../lib/supabase";
 
 const PROVIDER_OPTIONS = [
   "OpenAI",
@@ -41,8 +41,14 @@ export default function AccountPage() {
     models: ""
   });
   const [message, setMessage] = useState<string | null>(null);
+  const hasConfig = hasSupabaseConfig();
 
   useEffect(() => {
+    const supabase = getSupabaseClient();
+    if (!supabase) {
+      setMessage("缺少 Supabase 配置，请检查环境变量。");
+      return;
+    }
     supabase.auth.getSession().then(({ data }) => {
       if (!data.session) {
         router.replace("/login");
@@ -153,7 +159,10 @@ export default function AccountPage() {
   };
 
   const handleSignOut = async () => {
-    await supabase.auth.signOut();
+    const supabase = getSupabaseClient();
+    if (supabase) {
+      await supabase.auth.signOut();
+    }
     router.push("/login");
   };
 
@@ -199,6 +208,9 @@ export default function AccountPage() {
         </header>
 
         {message ? <div className="notice">{message}</div> : null}
+        {!hasConfig ? (
+          <div className="notice">缺少 Supabase 配置，请检查环境变量。</div>
+        ) : null}
 
         <section className="profile-card">
           <div className="profile-main">

@@ -1,17 +1,22 @@
 import React, { useState } from "react";
 import { useRouter } from "next/router";
-import { supabase } from "../lib/supabase";
+import { getSupabaseClient, hasSupabaseConfig } from "../lib/supabase";
 
 export default function ResetPasswordPage() {
   const router = useRouter();
   const [password, setPassword] = useState("");
   const [message, setMessage] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const hasConfig = hasSupabaseConfig();
 
   const handleReset = async () => {
     setLoading(true);
     setMessage(null);
     try {
+      const supabase = getSupabaseClient();
+      if (!supabase) {
+        throw new Error("Supabase 未配置，请检查环境变量。");
+      }
       const { error } = await supabase.auth.updateUser({ password });
       if (error) throw error;
       setMessage("密码已更新，请重新登录。");
@@ -37,7 +42,10 @@ export default function ResetPasswordPage() {
           />
         </div>
         {message ? <div className="auth-message">{message}</div> : null}
-        <button className="auth-primary" onClick={handleReset} disabled={loading}>
+        {!hasConfig ? (
+          <div className="auth-message">未配置 Supabase 环境变量。</div>
+        ) : null}
+        <button className="auth-primary" onClick={handleReset} disabled={loading || !hasConfig}>
           {loading ? "处理中..." : "更新密码"}
         </button>
       </div>

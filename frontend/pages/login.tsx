@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { useRouter } from "next/router";
-import { supabase } from "../lib/supabase";
+import { getSupabaseClient, hasSupabaseConfig } from "../lib/supabase";
 
 type Mode = "login" | "signup" | "reset";
 
@@ -11,11 +11,16 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [message, setMessage] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const hasConfig = hasSupabaseConfig();
 
   const handleSubmit = async () => {
     setLoading(true);
     setMessage(null);
     try {
+      const supabase = getSupabaseClient();
+      if (!supabase) {
+        throw new Error("Supabase 未配置，请检查环境变量。");
+      }
       if (mode === "login") {
         const { error } = await supabase.auth.signInWithPassword({ email, password });
         if (error) throw error;
@@ -92,7 +97,10 @@ export default function LoginPage() {
           </div>
         ) : null}
         {message ? <div className="auth-message">{message}</div> : null}
-        <button className="auth-primary" onClick={handleSubmit} disabled={loading}>
+        {!hasConfig ? (
+          <div className="auth-message">未配置 Supabase 环境变量。</div>
+        ) : null}
+        <button className="auth-primary" onClick={handleSubmit} disabled={loading || !hasConfig}>
           {loading ? "处理中..." : mode === "login" ? "登录" : mode === "signup" ? "注册" : "发送邮件"}
         </button>
       </div>

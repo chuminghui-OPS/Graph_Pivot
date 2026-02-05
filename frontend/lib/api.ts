@@ -1,9 +1,13 @@
-import { supabase } from "./supabase";
+import { getSupabaseClient } from "./supabase";
 
 export const API_BASE =
   process.env.NEXT_PUBLIC_API_BASE || "http://localhost:8000";
 
 async function getAccessToken() {
+  const supabase = getSupabaseClient();
+  if (!supabase) {
+    throw new Error("Supabase not configured");
+  }
   const { data, error } = await supabase.auth.getSession();
   if (error) {
     throw new Error(error.message);
