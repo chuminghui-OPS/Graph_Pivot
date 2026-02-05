@@ -1,13 +1,24 @@
-fastapi
-uvicorn[standard]
-celery
-redis
-sqlalchemy
-psycopg2-binary
-pydantic
-pydantic-settings
-python-multipart
-jsonschema
-httpx
-pymupdf4llm
-google-genai
+# 核心 Web 框架 (锁定大版本防止滑向几年前的旧版)
+fastapi>=0.115.0
+uvicorn[standard]>=0.30.0
+
+# 异步与任务调度
+celery>=5.3.0
+redis>=5.0.0
+
+# 数据与模型 (明确使用 V2 体系)
+pydantic>=2.7.0
+pydantic-settings>=2.2.0
+sqlalchemy>=2.0.0
+
+# 工具类
+python-multipart>=0.0.12
+jsonschema>=4.20.0
+httpx>=0.27.0
+PyJWT>=2.8.0
+
+# AI 与 文档处理 (这些包更新频繁，建议给个基本下限)
+pymupdf4llm>=0.0.17
+google-genai>=0.4.0
+
+gunicorn>=23.0.0

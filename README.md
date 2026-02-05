@@ -19,7 +19,8 @@ Graph Pivot 是一个从 0 到 1 的最小可运行全栈 MVP：用户上传 PDF
 - 后端：Python + FastAPI
 - 异步任务：Celery + Redis
 - 数据模型：Pydantic
-- 数据库：SQLite（默认，可改为 PostgreSQL）
+- 数据库：SQLite（默认，可改为 Supabase/PostgreSQL）
+- 鉴权：Supabase Auth（JWT）
 - 前端：Next.js + React
 - Markdown 渲染：react-markdown
 - 图谱渲染：react-force-graph
@@ -37,6 +38,30 @@ upload -> pdf_to_md -> chapter_split -> chunk_split -> llm_extract -> json_valid
 - Python 3.8+
 - Node.js 18+
 - Redis（本地或 Docker）
+
+### Supabase Auth 配置（必须）
+
+1) 在 Supabase 项目中获取 API 信息（Settings -> API）：
+
+- `SUPABASE_URL`
+- `SUPABASE_ANON_KEY`
+- `SERVICE_ROLE_KEY`（仅后端使用）
+
+2) JWT 验证方式二选一：
+
+- **JWKS（推荐）**：在 Supabase 中开启“非对称签名密钥”，后端设置 `SUPABASE_JWKS_URL`
+- **JWT_SECRET**：保持默认对称签名，后端设置 `SUPABASE_JWT_SECRET`
+
+提示：
+- JWKS 默认地址：`https://<project>.supabase.co/auth/v1/.well-known/jwks.json`
+- 若使用 Supabase Pooler 连接串，请确保包含 `sslmode=require`
+
+3) 前端配置：
+
+```
+NEXT_PUBLIC_SUPABASE_URL=...
+NEXT_PUBLIC_SUPABASE_ANON_KEY=...
+```
 
 ### 后端启动
 
@@ -108,6 +133,8 @@ copy backend\.env.example backend\.env
 在 `backend/.env` 中设置：
 
 - `DATABASE_URL` 为 Supabase 连接串
+- `SUPABASE_URL` / `SUPABASE_ANON_KEY` / `SUPABASE_SERVICE_ROLE_KEY`
+- `SUPABASE_JWKS_URL`（或 `SUPABASE_JWT_SECRET`）
 - `CORS_ORIGINS=https://你的域名`
 - `LLM_API_KEY` 等模型配置
 
@@ -117,7 +144,12 @@ copy backend\.env.example backend\.env
 copy .env.docker.example .env
 ```
 
-把 `NEXT_PUBLIC_API_BASE` 改为 `https://你的域名`
+把 `NEXT_PUBLIC_API_BASE` 改为 `https://你的域名`，并补充 Supabase 前端配置：
+
+```
+NEXT_PUBLIC_SUPABASE_URL=...
+NEXT_PUBLIC_SUPABASE_ANON_KEY=...
+```
 
 ### 3) 配置 Nginx
 
@@ -142,6 +174,7 @@ docker compose up -d --build
 ## 操作流程（从 0 到 1）
 
 1) 打开前端页面 `http://localhost:3000`  
+   - 首次需要使用邮箱注册/登录（Supabase Auth）
 2) 上传一个可复制文本的 PDF（无需 OCR）  
 3) 上传后会自动触发处理流程  
 4) 左侧章节列表显示处理状态：
@@ -155,6 +188,7 @@ docker compose up -d --build
 5) 点击章节查看图谱与对应 Markdown  
 6) 点击节点或边，高亮对应证据文本（evidence）
 7) 支持输入历史 book_id 直接加载，不重复消耗 LLM
+8) 访问 `http://localhost:3000/account` 管理个人信息与 API 资产
 
 ## 环境变量说明
 
@@ -169,6 +203,13 @@ GEMINI_API_KEY=
 GEMINI_MODEL=gemini-3-flash-preview
 LLM_MAX_TOKENS=30000
 DATABASE_URL=postgresql://postgres:YOUR_PASSWORD@YOUR_PROJECT.supabase.co:5432/postgres?sslmode=require
+SUPABASE_URL=https://YOUR_PROJECT.supabase.co
+SUPABASE_ANON_KEY=
+SUPABASE_SERVICE_ROLE_KEY=
+SUPABASE_JWKS_URL=https://YOUR_PROJECT.supabase.co/auth/v1/.well-known/jwks.json
+# SUPABASE_JWT_SECRET=
+SUPABASE_JWT_AUDIENCE=authenticated
+SUPABASE_JWT_ISSUER=https://YOUR_PROJECT.supabase.co/auth/v1
 CELERY_BROKER_URL=redis://localhost:6379/0
 CELERY_RESULT_BACKEND=redis://localhost:6379/1
 CORS_ORIGINS=http://localhost:3000
@@ -185,9 +226,47 @@ BOOK_INACTIVE_SECONDS=60
 
 ```
 NEXT_PUBLIC_API_BASE=http://localhost:8000
+NEXT_PUBLIC_SUPABASE_URL=https://YOUR_PROJECT.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=
+```
+
+## Supabase 用户表同步（profiles）
+
+在 Supabase SQL Editor 中执行以下脚本，确保每个新注册用户自动写入 `public.profiles`：
+
+```
+create table if not exists public.profiles (
+  id uuid primary key references auth.users(id) on delete cascade,
+  email text,
+  full_name text,
+  avatar_url text,
+  created_at timestamptz default now()
+);
+
+create or replace function public.handle_new_user()
+returns trigger as $$
+begin
+  insert into public.profiles (id, email, full_name, avatar_url, created_at)
+  values (
+    new.id,
+    new.email,
+    new.raw_user_meta_data->>'full_name',
+    new.raw_user_meta_data->>'avatar_url',
+    now()
+  )
+  on conflict (id) do nothing;
+  return new;
+end;
+$$ language plpgsql security definer;
+
+create trigger on_auth_user_created
+after insert on auth.users
+for each row execute procedure public.handle_new_user();
 ```
 
 ## API 说明
+
+> 说明：所有 API 需携带 `Authorization: Bearer <supabase_access_token>`。
 
 ### 上传 PDF
 
@@ -238,6 +317,27 @@ GET /api/books/{book_id}/chapters/{chapter_id}/graph
 
 ```
 GET /api/books/{book_id}/pdf
+```
+
+### 获取当前用户信息
+
+```
+GET /api/user/me
+```
+
+### 获取用户书籍列表
+
+```
+GET /api/user/books
+```
+
+### API 资产管理
+
+```
+GET /api/assets
+POST /api/assets
+PUT /api/assets/{asset_id}
+DELETE /api/assets/{asset_id}
 ```
 
 ## 核心数据结构

@@ -80,3 +80,48 @@ class LLMRelation(BaseModel):
 class LLMChunkResult(BaseModel):
     entities: List[LLMEntity] = Field(default_factory=list)
     relations: List[LLMRelation] = Field(default_factory=list)
+
+
+class UserProfile(BaseModel):
+    user_id: str
+    email: Optional[str] = None
+    full_name: Optional[str] = None
+    avatar_url: Optional[str] = None
+    plan: str = "Free"
+    total_books: int = 0
+
+
+class UserBook(BaseModel):
+    book_id: str
+    title: str
+    created_at: Optional[str] = None
+
+
+class ApiAssetBase(BaseModel):
+    name: str
+    provider: str
+    api_mode: str = "openai_compatible"
+    api_key: str
+    base_url: Optional[str] = None
+    api_path: Optional[str] = None
+    models: Optional[List[str]] = None
+
+
+class ApiAssetCreate(ApiAssetBase):
+    pass
+
+
+class ApiAssetUpdate(BaseModel):
+    name: Optional[str] = None
+    provider: Optional[str] = None
+    api_mode: Optional[str] = None
+    api_key: Optional[str] = None
+    base_url: Optional[str] = None
+    api_path: Optional[str] = None
+    models: Optional[List[str]] = None
+
+
+class ApiAssetOut(ApiAssetBase):
+    id: str
+    created_at: Optional[str] = None
+    updated_at: Optional[str] = None

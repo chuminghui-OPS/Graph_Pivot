@@ -11,6 +11,7 @@ class Book(Base):
     __tablename__ = "books"
 
     id: Mapped[str] = mapped_column(String, primary_key=True)
+    user_id: Mapped[str | None] = mapped_column(String, index=True, nullable=True)
     filename: Mapped[str] = mapped_column(String, nullable=False)
     pdf_path: Mapped[str] = mapped_column(String, nullable=False)
     md_path: Mapped[str | None] = mapped_column(String, nullable=True)

@@ -31,7 +31,7 @@ SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False, futu
 
 # 初始化数据库表
 def init_db() -> None:
-    from app.models import book, chapter, chunk, graph  # noqa: F401
+    from app.models import book, chapter, chunk, graph, api_asset, profile  # noqa: F401
 
     Base.metadata.create_all(bind=engine)
     if engine.dialect.name != "sqlite":
@@ -45,6 +45,8 @@ def init_db() -> None:
         book_columns = {row[1] for row in conn.execute(text("PRAGMA table_info(books)"))}
         if "last_seen_at" not in book_columns:
             conn.execute(text("ALTER TABLE books ADD COLUMN last_seen_at DATETIME"))
+        if "user_id" not in book_columns:
+            conn.execute(text("ALTER TABLE books ADD COLUMN user_id VARCHAR"))
 
 
 # FastAPI 依赖：获取数据库会话

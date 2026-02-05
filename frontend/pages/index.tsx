@@ -1,4 +1,5 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
+import { useRouter } from "next/router";
 import { ChapterList } from "../components/ChapterList";
 import { GraphView } from "../components/GraphView";
 import { ReaderPanel } from "../components/ReaderPanel";
@@ -11,9 +12,10 @@ import {
   heartbeatBook,
   processBook,
   uploadBook,
-  bookPdfUrl,
+  fetchBookPdfUrl,
   KnowledgeGraph
 } from "../lib/api";
+import { supabase } from "../lib/supabase";
 
 const PROGRESS_STEPS = [
   { start: 0, end: 20, duration: 5_000 },
@@ -51,6 +53,7 @@ const progressFromElapsed = (elapsedMs: number) => {
 };
 
 export default function Home() {
+  const router = useRouter();
   const [bookId, setBookId] = useState<string | null>(null);
   const [chapters, setChapters] = useState<Chapter[]>([]);
   const [activeChapterId, setActiveChapterId] = useState<string | null>(null);
@@ -68,11 +71,35 @@ export default function Home() {
   const progressMetaRef = useRef<{ chapterId: string; startedAt: number } | null>(null);
   const progressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const fastForwardTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [pdfUrl, setPdfUrl] = useState<string | null>(null);
+  const [authReady, setAuthReady] = useState(false);
 
-  const pdfUrl = useMemo(
-    () => (bookId ? bookPdfUrl(bookId) : null),
-    [bookId]
-  );
+  useEffect(() => {
+    let mounted = true;
+    supabase.auth
+      .getSession()
+      .then(({ data }) => {
+        if (!mounted) return;
+        setAuthReady(true);
+        if (!data.session) {
+          router.replace("/login");
+        }
+      })
+      .catch(() => {
+        if (mounted) {
+          setAuthReady(true);
+        }
+      });
+    const { data } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (!session) {
+        router.replace("/login");
+      }
+    });
+    return () => {
+      mounted = false;
+      data.subscription.unsubscribe();
+    };
+  }, [router]);
 
   const totalChapters = chapters.length;
   const doneCount = chapters.filter((chapter) => chapter.status === "DONE").length;
@@ -101,8 +128,33 @@ export default function Home() {
 
   useEffect(() => {
     if (!bookId) {
+      if (pdfUrl) {
+        URL.revokeObjectURL(pdfUrl);
+      }
+      setPdfUrl(null);
       return;
     }
+    let cancelled = false;
+    const loadPdf = async () => {
+      try {
+        const url = await fetchBookPdfUrl(bookId);
+        if (cancelled) {
+          URL.revokeObjectURL(url);
+          return;
+        }
+        setPdfUrl((prev) => {
+          if (prev) URL.revokeObjectURL(prev);
+          return url;
+        });
+      } catch {
+        // ignore PDF errors to avoid blocking UI
+      }
+    };
+    loadPdf();
+    return () => {
+      cancelled = true;
+    };
+  }, [bookId]);
     let timer: NodeJS.Timeout | null = null;
     const poll = async () => {
       try {
@@ -294,6 +346,10 @@ export default function Home() {
     setMarkdown("");
   };
 
+  if (!authReady) {
+    return null;
+  }
+
   return (
     <div className="page">
       <header className="hero">
@@ -325,7 +381,7 @@ export default function Home() {
             ) : null}
           </div>
         </div>
-        <div className="upload-card">
+          <div className="upload-card">
           <div className="upload-title">Upload PDF</div>
           <input
             type="file"
@@ -333,6 +389,15 @@ export default function Home() {
             onChange={handleUpload}
             disabled={uploading}
           />
+          <div className="account-link">
+            <button
+              className="load-btn"
+              onClick={() => router.push("/account")}
+              type="button"
+            >
+              个人中心
+            </button>
+          </div>
           <div className="upload-title" style={{ marginTop: 12 }}>
             Load Existing Book
           </div>

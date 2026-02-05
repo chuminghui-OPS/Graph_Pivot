@@ -17,6 +17,7 @@ from app.core.schemas import (
     UploadResponse,
 )
 from app.core.celery_app import celery_app
+from app.core.auth import UserContext, get_current_user
 from app.models import Book, Chapter, ChapterGraph
 from app.services.llm_service import get_llm_info
 from app.services.md_service import load_chapter_text
@@ -66,7 +67,11 @@ def _refresh_book_status(db: Session, book_id: str) -> None:
 
 # 上传 PDF 并创建书籍记录
 @router.post("/upload", response_model=UploadResponse)
-async def upload_book(file: UploadFile = File(...), db: Session = Depends(get_db)) -> UploadResponse:
+async def upload_book(
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    user: UserContext = Depends(get_current_user),
+) -> UploadResponse:
     if not file.filename or not file.filename.lower().endswith(".pdf"):
         raise HTTPException(status_code=400, detail="Only PDF files are supported.")
 
@@ -81,6 +86,7 @@ async def upload_book(file: UploadFile = File(...), db: Session = Depends(get_db
     # 写入数据库
     book = Book(
         id=book_id,
+        user_id=user.user_id,
         filename=file.filename,
         pdf_path=pdf_path,
         status="uploaded",
@@ -98,9 +104,10 @@ def process_book(
     book_id: str,
     llm: str = Query("qwen", description="llm provider: gemini or qwen"),
     db: Session = Depends(get_db),
+    user: UserContext = Depends(get_current_user),
 ) -> ProcessResponse:
     book = db.get(Book, book_id)
-    if not book:
+    if not book or book.user_id != user.user_id:
         raise HTTPException(status_code=404, detail="Book not found.")
 
     provider = llm.lower()
@@ -117,9 +124,13 @@ def process_book(
 
 # 前端心跳：保持书籍处理活跃
 @router.post("/{book_id}/heartbeat")
-def heartbeat_book(book_id: str, db: Session = Depends(get_db)) -> dict:
+def heartbeat_book(
+    book_id: str,
+    db: Session = Depends(get_db),
+    user: UserContext = Depends(get_current_user),
+) -> dict:
     book = db.get(Book, book_id)
-    if not book:
+    if not book or book.user_id != user.user_id:
         raise HTTPException(status_code=404, detail="Book not found.")
     book.last_seen_at = datetime.utcnow()
     db.commit()
@@ -128,9 +139,13 @@ def heartbeat_book(book_id: str, db: Session = Depends(get_db)) -> dict:
 
 # 获取章节列表与状态
 @router.get("/{book_id}/chapters", response_model=ChapterListResponse)
-def list_chapters(book_id: str, db: Session = Depends(get_db)) -> ChapterListResponse:
+def list_chapters(
+    book_id: str,
+    db: Session = Depends(get_db),
+    user: UserContext = Depends(get_current_user),
+) -> ChapterListResponse:
     book = db.get(Book, book_id)
-    if not book:
+    if not book or book.user_id != user.user_id:
         raise HTTPException(status_code=404, detail="Book not found.")
     if book.status.startswith("failed:"):
         message = book.status.split(":", 1)[1] if ":" in book.status else "PDF 解析失败"
@@ -175,7 +190,10 @@ def list_chapters(book_id: str, db: Session = Depends(get_db)) -> ChapterListRes
 # 获取指定章节 Markdown
 @router.get("/{book_id}/chapters/{chapter_id}/md", response_model=ChapterMarkdownResponse)
 def get_chapter_markdown(
-    book_id: str, chapter_id: str, db: Session = Depends(get_db)
+    book_id: str,
+    chapter_id: str,
+    db: Session = Depends(get_db),
+    user: UserContext = Depends(get_current_user),
 ) -> ChapterMarkdownResponse:
     chapter = (
         db.query(Chapter)
@@ -186,7 +204,7 @@ def get_chapter_markdown(
         raise HTTPException(status_code=404, detail="Chapter not found.")
 
     book = db.get(Book, book_id)
-    if not book or not book.md_path:
+    if not book or book.user_id != user.user_id or not book.md_path:
         raise HTTPException(status_code=404, detail="Markdown not ready.")
 
     # 按字符范围懒加载章节内容
@@ -197,7 +215,10 @@ def get_chapter_markdown(
 # 获取章节知识图谱
 @router.get("/{book_id}/chapters/{chapter_id}/graph", response_model=KnowledgeGraph)
 def get_chapter_graph(
-    book_id: str, chapter_id: str, db: Session = Depends(get_db)
+    book_id: str,
+    chapter_id: str,
+    db: Session = Depends(get_db),
+    user: UserContext = Depends(get_current_user),
 ) -> KnowledgeGraph:
     chapter = (
         db.query(Chapter)
@@ -206,6 +227,9 @@ def get_chapter_graph(
     )
     if not chapter:
         raise HTTPException(status_code=404, detail="Chapter not found.")
+    book = db.get(Book, book_id)
+    if not book or book.user_id != user.user_id:
+        raise HTTPException(status_code=404, detail="Book not found.")
 
     # 取最新一条图谱记录
     graph_row = (
@@ -223,9 +247,13 @@ def get_chapter_graph(
 
 # 获取原始 PDF（内联预览）
 @router.get("/{book_id}/pdf")
-def get_book_pdf(book_id: str, db: Session = Depends(get_db)) -> FileResponse:
+def get_book_pdf(
+    book_id: str,
+    db: Session = Depends(get_db),
+    user: UserContext = Depends(get_current_user),
+) -> FileResponse:
     book = db.get(Book, book_id)
-    if not book:
+    if not book or book.user_id != user.user_id:
         raise HTTPException(status_code=404, detail="Book not found.")
     headers = {"Content-Disposition": f'inline; filename="{book.filename}"'}
     return FileResponse(book.pdf_path, media_type="application/pdf", headers=headers)
