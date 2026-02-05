@@ -6,7 +6,7 @@ data/
 # env files
 .env
 backend/.env
-frontend/.env.local
+
 
 # python cache
 __pycache__/

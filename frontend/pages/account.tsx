@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/router";
+import dynamic from "next/dynamic";
 import {
   ApiAsset,
   UserBook,
@@ -24,7 +25,7 @@ const PROVIDER_OPTIONS = [
   "Groq"
 ];
 
-export default function AccountPage() {
+function AccountPage() {
   const router = useRouter();
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [books, setBooks] = useState<UserBook[]>([]);
@@ -405,3 +406,5 @@ export default function AccountPage() {
     </div>
   );
 }
+
+export default dynamic(() => Promise.resolve(AccountPage), { ssr: false });
