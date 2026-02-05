@@ -155,10 +155,16 @@ export default function Home() {
       cancelled = true;
     };
   }, [bookId]);
+
+  useEffect(() => {
+    if (!bookId) {
+      return;
+    }
+    const currentBookId = bookId;
     let timer: NodeJS.Timeout | null = null;
     const poll = async () => {
       try {
-        const data = await fetchChapters(bookId);
+        const data = await fetchChapters(currentBookId);
         setChapters(data.chapters);
         setLlmInfo({ provider: data.llm_provider, model: data.llm_model });
         if (!activeChapterId && data.chapters.length > 0) {
