@@ -22,3 +22,4 @@ pymupdf4llm>=0.0.17
 google-genai>=0.4.0
 
 gunicorn>=23.0.0
+cryptography>=42.0.0

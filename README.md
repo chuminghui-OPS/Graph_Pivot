@@ -70,6 +70,10 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=...
 ```
 copy backend\.env.example backend\.env
 ```
+改为：
+```
+copy backend\config\.env.example backend\config\.env
+```
 
 2) 安装依赖：
 
@@ -127,10 +131,10 @@ postgresql://postgres:YOUR_PASSWORD@YOUR_PROJECT.supabase.co:5432/postgres?sslmo
 后端：
 
 ```
-copy backend\.env.example backend\.env
+copy backend\config\.env.example backend\config\.env
 ```
 
-在 `backend/.env` 中设置：
+在 `backend/config/.env` 中设置：
 
 - `DATABASE_URL` 为 Supabase 连接串
 - `SUPABASE_URL` / `SUPABASE_ANON_KEY` / `SUPABASE_SERVICE_ROLE_KEY`
@@ -192,7 +196,7 @@ docker compose up -d --build
 
 ## 环境变量说明
 
-后端 `backend/.env`：
+后端 `backend/config/.env`：
 
 ```
 LLM_PROVIDER=qwen
@@ -203,6 +207,7 @@ GEMINI_API_KEY=
 GEMINI_MODEL=gemini-3-flash-preview
 LLM_MAX_TOKENS=30000
 DATABASE_URL=postgresql://postgres:YOUR_PASSWORD@YOUR_PROJECT.supabase.co:5432/postgres?sslmode=require
+API_KEY_ENCRYPTION_KEY=
 SUPABASE_URL=https://YOUR_PROJECT.supabase.co
 SUPABASE_ANON_KEY=
 SUPABASE_SERVICE_ROLE_KEY=
@@ -221,6 +226,7 @@ BOOK_INACTIVE_SECONDS=60
 - `LLM_BASE_URL` 兼容 OpenAI 协议，可改为你的代理或本地模型服务。
 - `LLM_PROVIDER` 支持 `qwen`/`gemini`。
 - `BOOK_INACTIVE_SECONDS`：前端断开后，书籍处理暂停的超时秒数。
+- `API_KEY_ENCRYPTION_KEY`：用于加密存储 API Key（Fernet 32-byte urlsafe base64）。
 
 前端 `frontend/.env.local`：
 
@@ -264,6 +270,87 @@ after insert on auth.users
 for each row execute procedure public.handle_new_user();
 ```
 
+## 数据库迁移（Supabase/Postgres）
+
+新增字段与表需要手动执行：
+
+```
+alter table books add column if not exists book_type varchar;
+alter table books add column if not exists word_count integer;
+create index if not exists ix_books_book_type on books(book_type);
+
+create table if not exists api_managers (
+  id varchar primary key,
+  user_id varchar not null,
+  name varchar not null,
+  provider varchar not null,
+  api_key_encrypted text not null,
+  base_url varchar,
+  model varchar,
+  created_at timestamptz default now(),
+  updated_at timestamptz default now()
+);
+
+create table if not exists statistics (
+  id varchar primary key,
+  metric varchar not null,
+  book_type varchar,
+  provider varchar,
+  count integer default 0,
+  tokens_in integer default 0,
+  tokens_out integer default 0,
+  last_book_id varchar,
+  updated_at timestamptz default now()
+);
+
+create table if not exists user_settings (
+  user_id varchar primary key,
+  default_asset_id varchar,
+  default_model varchar,
+  created_at timestamptz default now(),
+  updated_at timestamptz default now()
+);
+
+create table if not exists public_books (
+  id varchar primary key,
+  owner_user_id varchar not null,
+  title varchar not null,
+  cover_url varchar,
+  favorites_count integer default 0,
+  reposts_count integer default 0,
+  published_at timestamptz default now(),
+  updated_at timestamptz default now()
+);
+
+create table if not exists public_book_favorites (
+  id varchar primary key,
+  book_id varchar not null,
+  user_id varchar not null,
+  created_at timestamptz default now()
+);
+create unique index if not exists uq_fav_book_user on public_book_favorites(book_id, user_id);
+
+create table if not exists public_book_reposts (
+  id varchar primary key,
+  book_id varchar not null,
+  user_id varchar not null,
+  created_at timestamptz default now()
+);
+create unique index if not exists uq_repost_book_user on public_book_reposts(book_id, user_id);
+
+create table if not exists llm_usage_events (
+  id varchar primary key,
+  user_id varchar not null,
+  book_id varchar not null,
+  provider varchar not null,
+  model varchar,
+  tokens_in integer default 0,
+  tokens_out integer default 0,
+  created_at timestamptz default now()
+);
+create index if not exists ix_llm_usage_user_book on llm_usage_events(user_id, book_id);
+```
+
 ## API 说明
 
 > 说明：所有 API 需携带 `Authorization: Bearer <supabase_access_token>`。
@@ -277,23 +364,27 @@ POST /api/books/upload
 示例：
 
 ```
-curl -F "file=@./sample.pdf" http://localhost:8000/api/books/upload
+curl -F "file=@./sample.pdf" -F "book_type=technology" http://localhost:8000/api/books/upload
 ```
 
 响应：
 
 ```
 {
-  "book_id": "b_xxx",
+  "book_id": "XX-TTTTTT-RRR-N-C",
   "filename": "sample.pdf"
 }
 ```
 
+说明：`book_type` 为 9 大类之一（literature/technology/history/philosophy/economics/art/education/biography/other）。
+
 ### 启动处理流程
 
 ```
-POST /api/books/{book_id}/process?llm=qwen|gemini
+POST /api/books/{book_id}/process?llm=qwen|gemini|custom
 ```
+
+说明：当 `llm=custom` 且不传 `asset_id` 时，会自动使用 `POST /api/settings` 设置的默认资产。
 
 ### 获取章节列表
 
@@ -340,7 +431,60 @@ PUT /api/assets/{asset_id}
 DELETE /api/assets/{asset_id}
 ```
 
+说明：出于安全考虑，`GET /api/assets` 返回的是 `api_key_masked`（脱敏），不会返回明文 key；创建/更新时可传 `api_key`。
+
+### API Settings（Chatbox 风格默认配置）
+
+```
+GET /api/settings
+POST /api/settings
+```
+
+`POST /api/settings` 会创建一条新的资产（OpenAI 兼容），并把它设为当前用户默认资产（`llm=custom` 时自动使用）。
+
+### 书籍公开 / 社交
+
+```
+POST   /api/books/{book_id}/publish
+DELETE /api/books/{book_id}/publish
+POST   /api/books/publish
+
+GET    /api/public/books
+GET    /api/public/books/{book_id}
+POST   /api/public/books/{book_id}/favorite
+DELETE /api/public/books/{book_id}/favorite
+POST   /api/public/books/{book_id}/repost
+DELETE /api/public/books/{book_id}/repost
+```
+
+### Token 用量查询（按书/按用户）
+
+```
+GET /api/books/{book_id}/usage
+GET /api/user/usage
+```
+
+### 管理后台
+
+```
+GET /api/admin/dashboard
+```
+
+需要请求头：`X-Admin-Key: <ADMIN_API_KEY>`。
+
 ## 核心数据结构
+
+Book ID（新格式）：
+
+```
+XX-TTTTTT-RRR-N-C
+```
+
+- `XX`：类型码（字母）+ 字数区间码（1~6）
+- `TTTTTT`：时间戳（YYMMDDHH 转 16 进制，6 位）
+- `RRR`：三位随机数
+- `N`：数字校验码
+- `C`：字母校验码
 
 Chapter：
 
@@ -416,7 +560,7 @@ frontend/
 - `backend/`
 - `frontend/`
 - `README.md`
-- `backend/.env.example`
+- `backend/config/.env.example`
 - `frontend/.env.local.example`
 - `package.json`/`package-lock.json`
 

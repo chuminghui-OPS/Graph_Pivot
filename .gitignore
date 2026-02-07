@@ -1,12 +1,27 @@
-
 frontend/node_modules/
 
 data/
+wheels/
+backend/wheels/
+镜像包 .tar/
+*.tar
+*.tar.gz
+*.tgz
 
 # env files
 .env
+.env.*
+!.env.example
+!.env.docker.example
 backend/.env
-
+backend/.env.*
+!backend/.env.example
+backend/config/.env
+backend/config/.env.*
+!backend/config/.env.example
+frontend/.env.local
+frontend/.env.local.*
+!frontend/.env.local.example
 
 # python cache
 __pycache__/

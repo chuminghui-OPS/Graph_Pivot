@@ -18,6 +18,8 @@ ChapterStatus = Literal[
 class UploadResponse(BaseModel):
     book_id: str
     filename: str
+    book_type: Optional[str] = None
+    word_count: Optional[int] = None
 
 
 class ProcessResponse(BaseModel):
@@ -97,7 +99,7 @@ class UserBook(BaseModel):
     created_at: Optional[str] = None
 
 
-class ApiAssetBase(BaseModel):
+class ApiAssetCreate(BaseModel):
     name: str
     provider: str
     api_mode: str = "openai_compatible"
@@ -105,10 +107,6 @@ class ApiAssetBase(BaseModel):
     base_url: Optional[str] = None
     api_path: Optional[str] = None
     models: Optional[List[str]] = None
-
-
-class ApiAssetCreate(ApiAssetBase):
-    pass
 
 
 class ApiAssetUpdate(BaseModel):
@@ -121,7 +119,107 @@ class ApiAssetUpdate(BaseModel):
     models: Optional[List[str]] = None
 
 
-class ApiAssetOut(ApiAssetBase):
+class ApiAssetOut(BaseModel):
     id: str
+    name: str
+    provider: str
+    api_mode: str = "openai_compatible"
+    api_key_masked: str = ""
+    base_url: Optional[str] = None
+    api_path: Optional[str] = None
+    models: Optional[List[str]] = None
     created_at: Optional[str] = None
     updated_at: Optional[str] = None
+
+
+class ApiManagerBase(BaseModel):
+    name: str
+    provider: str
+    api_key: str
+    base_url: Optional[str] = None
+    model: Optional[str] = None
+
+
+class ApiManagerCreate(ApiManagerBase):
+    pass
+
+
+class ApiManagerUpdate(BaseModel):
+    name: Optional[str] = None
+    provider: Optional[str] = None
+    api_key: Optional[str] = None
+    base_url: Optional[str] = None
+    model: Optional[str] = None
+
+
+class ApiManagerOut(BaseModel):
+    id: str
+    name: str
+    provider: str
+    api_key_masked: str
+    base_url: Optional[str] = None
+    model: Optional[str] = None
+    created_at: Optional[str] = None
+    updated_at: Optional[str] = None
+
+
+class ApiSettingsCreate(BaseModel):
+    name: str = "default"
+    provider: str
+    api_mode: str = "openai_compatible"
+    api_key: str
+    base_url: Optional[str] = None
+    api_path: Optional[str] = None
+    model: Optional[str] = None
+
+
+class UserSettingsOut(BaseModel):
+    default_asset_id: Optional[str] = None
+    default_model: Optional[str] = None
+
+
+class SettingsResponse(UserSettingsOut):
+    assets: List[ApiAssetOut] = Field(default_factory=list)
+
+
+class PublishBookRequest(BaseModel):
+    title: Optional[str] = None
+    cover_url: Optional[str] = None
+
+
+class PublishBookByIdRequest(PublishBookRequest):
+    book_id: str
+
+
+class PublicBookOut(BaseModel):
+    id: str
+    title: str
+    cover_url: Optional[str] = None
+    owner_user_id: str
+    favorites_count: int = 0
+    reposts_count: int = 0
+    published_at: Optional[str] = None
+    updated_at: Optional[str] = None
+
+
+class LLMUsageSummary(BaseModel):
+    provider: str
+    model: Optional[str] = None
+    calls: int = 0
+    tokens_in: int = 0
+    tokens_out: int = 0
+
+
+class BookUsageResponse(BaseModel):
+    book_id: str
+    calls: int = 0
+    tokens_in: int = 0
+    tokens_out: int = 0
+    by_model: List[LLMUsageSummary] = Field(default_factory=list)
+
+
+class UserUsageBookRow(BaseModel):
+    book_id: str
+    calls: int = 0
+    tokens_in: int = 0
+    tokens_out: int = 0

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta
+import json
 from typing import Any, Dict, List
 from uuid import uuid4
 
@@ -9,10 +10,12 @@ from celery import group, chord
 from app.core.celery_app import celery_app
 from app.core.config import settings
 from app.core.database import SessionLocal
-from app.models import Book, Chapter, Chunk, ChapterGraph
+from app.models import Book, Chapter, Chunk, ChapterGraph, LLMUsageEvent
 from app.services.chunk_service import count_text_units, split_evenly
 from app.services.graph_builder import build_chapter_graph
-from app.services.llm_service import extract_with_validation
+from app.services.llm_service import extract_with_validation, LLMConfig, resolve_asset_config, estimate_tokens
+from app.services.statistics import record_llm_usage
+from app.services.prompt_strategy import build_prompt
 from app.services.md_service import load_chapter_text, parse_structure
 from app.services.pdf_service import pdf_to_markdown
 from app.utils.file_store import ensure_book_dir, new_chapter_id, new_chunk_id
@@ -25,7 +28,11 @@ def _db_session():
 
 def _normalize_provider(provider: str | None) -> str:
     name = (provider or settings.llm_provider or "qwen").lower()
-    return "gemini" if name == "gemini" else "qwen"
+    if name == "gemini":
+        return "gemini"
+    if name == "custom":
+        return "custom"
+    return "qwen"
 
 
 def _is_book_inactive(book: Book) -> bool:
@@ -183,6 +190,9 @@ def process_chapter(book_id: str, chapter_id: str, llm_provider: str | None = No
         db.commit()
 
         provider = _normalize_provider(llm_provider)
+        llm_config: LLMConfig | None = None
+        if provider == "custom":
+            llm_config = resolve_asset_config(db, book)
 
         # 读取章节文本并切块
         text = load_chapter_text(book.md_path, chapter.start_char, chapter.end_char)
@@ -235,7 +245,10 @@ def process_chapter(book_id: str, chapter_id: str, llm_provider: str | None = No
             return {"chapter_id": chapter_id, "chunks": 0}
 
         # 并发抽取所有 chunk，结束后回调聚合任务
-        tasks = group(extract_chunk.s(chunk_id, llm_provider) for chunk_id in chunk_ids)
+        tasks = group(
+            extract_chunk.s(chunk_id, llm_provider, llm_config.model_dump() if llm_config else None)
+            for chunk_id in chunk_ids
+        )
         callback = assemble_chapter_graph.s(book_id, chapter_id)
         chord(tasks)(callback)
         return {"chapter_id": chapter_id, "chunks": len(chunk_ids)}
@@ -245,7 +258,9 @@ def process_chapter(book_id: str, chapter_id: str, llm_provider: str | None = No
 
 # Celery 任务：抽取单个 chunk 的实体关系
 @celery_app.task
-def extract_chunk(chunk_id: str, llm_provider: str | None = None) -> Dict[str, Any]:
+def extract_chunk(
+    chunk_id: str, llm_provider: str | None = None, llm_config: Dict[str, Any] | None = None
+) -> Dict[str, Any]:
     db = _db_session()
     try:
         chunk = db.get(Chunk, chunk_id)
@@ -256,8 +271,57 @@ def extract_chunk(chunk_id: str, llm_provider: str | None = None) -> Dict[str, A
         chunk.status = "processing"
         db.commit()
 
+        chapter = db.get(Chapter, chunk.chapter_id)
+        book = db.get(Book, chapter.book_id) if chapter else None
+        book_type = book.book_type if book else None
+
         # LLM 抽取并校验
-        result = extract_with_validation(chunk.text, max_retries=2, provider_override=llm_provider)
+        config = LLMConfig(**llm_config) if llm_config else None
+        result = extract_with_validation(
+            chunk.text,
+            max_retries=2,
+            provider_override=llm_provider,
+            config_override=config,
+            book_type=book_type,
+        )
+
+        # Token usage accounting (best-effort estimation).
+        provider_used = (llm_provider or (config.provider if config else settings.llm_provider) or "qwen").lower()
+        model_used: str | None = None
+        if provider_used == "custom" and config:
+            provider_used = (config.provider or "custom").lower()
+            if provider_used == "gemini":
+                model_used = config.model or settings.gemini_model
+            else:
+                model_used = config.model or settings.llm_model
+        elif provider_used == "gemini":
+            model_used = settings.gemini_model
+        else:
+            model_used = (config.model if config else None) or settings.llm_model
+
+        prompt_text = build_prompt(chunk.text, book_type)
+        tokens_in = estimate_tokens(prompt_text)
+        if provider_used != "gemini":
+            tokens_in += estimate_tokens("Return only valid JSON.")
+        tokens_out = estimate_tokens(json.dumps(result, ensure_ascii=False))
+
+        # Global aggregate stats (optional; commit together with chunk row update).
+        record_llm_usage(db, provider=provider_used, tokens_in=tokens_in, tokens_out=tokens_out, commit=False)
+
+        # Per-book/per-model events for billing & monitoring.
+        if book and book.user_id:
+            db.add(
+                LLMUsageEvent(
+                    id=uuid4().hex,
+                    user_id=book.user_id,
+                    book_id=book.id,
+                    provider=provider_used,
+                    model=model_used,
+                    tokens_in=max(0, tokens_in),
+                    tokens_out=max(0, tokens_out),
+                    created_at=datetime.utcnow(),
+                )
+            )
         if result.get("error"):
             # 标记失败并记录错误
             chunk.status = "failed"

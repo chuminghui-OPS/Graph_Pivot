@@ -3,7 +3,10 @@ from __future__ import annotations
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api.routes import books, user, assets
+from app.api.routes import books, user, assets, managers, book_types
+from app.api.routes import settings as settings_routes
+from app.api.routes import public_books as public_books_routes
+from app.api.routes import admin as admin_routes
 from app.core.config import settings
 from app.core.database import init_db
 
@@ -28,6 +31,11 @@ api_prefix = api_prefix.rstrip("/")
 app.include_router(books.router, prefix=f"{api_prefix}/books", tags=["books"])
 app.include_router(user.router, prefix=f"{api_prefix}/user", tags=["user"])
 app.include_router(assets.router, prefix=f"{api_prefix}/assets", tags=["assets"])
+app.include_router(managers.router, prefix=f"{api_prefix}/managers", tags=["managers"])
+app.include_router(book_types.router, prefix=f"{api_prefix}/book-types", tags=["book-types"])
+app.include_router(settings_routes.router, prefix=f"{api_prefix}/settings", tags=["settings"])
+app.include_router(public_books_routes.router, prefix=f"{api_prefix}/public", tags=["public"])
+app.include_router(admin_routes.router, prefix=f"{api_prefix}/admin", tags=["admin"])
 
 
 # 启动事件：创建数据库表结构

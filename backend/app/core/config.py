@@ -44,6 +44,10 @@ class Settings(BaseSettings):
     gemini_api_key: str | None = None
     # Gemini 模型名
     gemini_model: str = "gemini-3-flash-preview"
+    # API Key 加密密钥（Fernet, 32-byte urlsafe base64）
+    api_key_encryption_key: str | None = None
+    # 管理后台访问密钥（用于 /admin/dashboard）
+    admin_api_key: str | None = None
 
     # 兜底切块长度（当使用固定切块策略时）
     chunk_size: int = 1500
@@ -72,7 +76,11 @@ class Settings(BaseSettings):
 
     # Pydantic Settings 行为配置
     class Config:
-        env_file = ".env"
+        env_file = (
+            os.getenv("APP_ENV_FILE") or "config/.env",
+            "backend/config/.env",
+            ".env",
+        )
         case_sensitive = False
 
     # 解析 CORS 允许域名列表（供中间件直接使用）

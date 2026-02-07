@@ -4,6 +4,7 @@ import os
 from uuid import uuid4
 
 from app.core.config import settings
+from app.utils.book_id import generate_book_id
 
 
 # 确保书籍目录存在并返回路径
@@ -14,8 +15,8 @@ def ensure_book_dir(book_id: str) -> str:
 
 
 # 生成书籍唯一 ID
-def new_book_id() -> str:
-    return f"b_{uuid4().hex}"
+def new_book_id(book_type: str | None = None, word_count: int | None = None) -> str:
+    return generate_book_id(book_type or "other", word_count or 0)
 
 
 # 生成章节 ID

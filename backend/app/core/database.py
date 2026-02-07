@@ -31,9 +31,35 @@ SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False, futu
 
 # 初始化数据库表
 def init_db() -> None:
-    from app.models import book, chapter, chunk, graph, api_asset, profile  # noqa: F401
+    from app.models import (  # noqa: F401
+        book,
+        chapter,
+        chunk,
+        graph,
+        api_asset,
+        profile,
+        api_manager,
+        statistics,
+        user_settings,
+        public_book,
+        public_book_favorite,
+        public_book_repost,
+        llm_usage_event,
+    )
 
-    Base.metadata.create_all(bind=engine)
+    # For PostgreSQL (Supabase), multiple gunicorn workers can race on create_all(),
+    # causing DDL conflicts (e.g. duplicate pg_type). Use an advisory lock to serialize.
+    if engine.dialect.name.startswith("postgres"):
+        lock_id = 97133791
+        with engine.connect() as conn:
+            conn.execute(text("SELECT pg_advisory_lock(:lock_id)"), {"lock_id": lock_id})
+            try:
+                Base.metadata.create_all(bind=conn)
+            finally:
+                conn.execute(text("SELECT pg_advisory_unlock(:lock_id)"), {"lock_id": lock_id})
+            conn.commit()
+    else:
+        Base.metadata.create_all(bind=engine)
     if engine.dialect.name != "sqlite":
         return
     with engine.begin() as conn:
@@ -45,8 +71,16 @@ def init_db() -> None:
         book_columns = {row[1] for row in conn.execute(text("PRAGMA table_info(books)"))}
         if "last_seen_at" not in book_columns:
             conn.execute(text("ALTER TABLE books ADD COLUMN last_seen_at DATETIME"))
+        if "book_type" not in book_columns:
+            conn.execute(text("ALTER TABLE books ADD COLUMN book_type VARCHAR"))
+        if "word_count" not in book_columns:
+            conn.execute(text("ALTER TABLE books ADD COLUMN word_count INTEGER"))
         if "user_id" not in book_columns:
             conn.execute(text("ALTER TABLE books ADD COLUMN user_id VARCHAR"))
+        if "llm_asset_id" not in book_columns:
+            conn.execute(text("ALTER TABLE books ADD COLUMN llm_asset_id VARCHAR"))
+        if "llm_model" not in book_columns:
+            conn.execute(text("ALTER TABLE books ADD COLUMN llm_model VARCHAR"))
 
 
 # FastAPI 依赖：获取数据库会话

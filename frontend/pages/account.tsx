@@ -5,10 +5,12 @@ import {
   ApiAsset,
   UserBook,
   UserProfile,
+  UserUsageBookRow,
   createAsset,
   deleteAsset,
   fetchAssets,
   fetchUserBooks,
+  fetchUserUsage,
   fetchUserProfile,
   updateAsset
 } from "../lib/api";
@@ -29,6 +31,7 @@ function AccountPage() {
   const router = useRouter();
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [books, setBooks] = useState<UserBook[]>([]);
+  const [usageByBook, setUsageByBook] = useState<Record<string, UserUsageBookRow>>({});
   const [assets, setAssets] = useState<ApiAsset[]>([]);
   const [activeAssetId, setActiveAssetId] = useState<string | null>(null);
   const [showModal, setShowModal] = useState(false);
@@ -71,14 +74,20 @@ function AccountPage() {
   useEffect(() => {
     const load = async () => {
       try {
-        const [profileData, booksData, assetsData] = await Promise.all([
+        const [profileData, booksData, assetsData, usageData] = await Promise.all([
           fetchUserProfile(),
           fetchUserBooks(),
-          fetchAssets()
+          fetchAssets(),
+          fetchUserUsage()
         ]);
         setProfile(profileData);
         setBooks(booksData);
         setAssets(assetsData);
+        const usageMap: Record<string, UserUsageBookRow> = {};
+        for (const row of usageData) {
+          usageMap[row.book_id] = row;
+        }
+        setUsageByBook(usageMap);
         if (!activeAssetId && assetsData.length > 0) {
           setActiveAssetId(assetsData[0].id);
         }
@@ -95,7 +104,7 @@ function AccountPage() {
       name: activeAsset.name,
       provider: activeAsset.provider,
       api_mode: activeAsset.api_mode,
-      api_key: activeAsset.api_key,
+      api_key: "",
       base_url: activeAsset.base_url || "",
       api_path: activeAsset.api_path || "",
       models: (activeAsset.models || []).join(", ")
@@ -104,17 +113,19 @@ function AccountPage() {
 
   const handleSave = async () => {
     if (!activeAsset) return;
-    const payload = {
+    const payload: any = {
       name: form.name,
       provider: form.provider,
       api_mode: form.api_mode,
-      api_key: form.api_key,
       base_url: form.base_url || null,
       api_path: form.api_path || null,
       models: form.models
         ? form.models.split(",").map((m) => m.trim()).filter(Boolean)
         : []
     };
+    if (form.api_key) {
+      payload.api_key = form.api_key;
+    }
     try {
       const updated = await updateAsset(activeAsset.id, payload);
       setAssets((prev) => prev.map((item) => (item.id === updated.id ? updated : item)));
@@ -126,6 +137,10 @@ function AccountPage() {
 
   const handleCreate = async () => {
     try {
+      if (!form.api_key) {
+        setMessage("请输入 API 密钥");
+        return;
+      }
       const payload = {
         name: form.name,
         provider: form.provider,
@@ -278,6 +293,9 @@ function AccountPage() {
                     value={form.api_key}
                     onChange={(e) => setForm({ ...form, api_key: e.target.value })}
                   />
+                  <div className="hint">
+                    已保存：{activeAsset.api_key_masked || "-"}（留空不修改）
+                  </div>
                 </div>
                 <div className="detail-grid">
                   <div className="detail-row">
@@ -328,13 +346,19 @@ function AccountPage() {
                 <div key={book.book_id} className="book-card">
                   <div className="book-cover">{book.title?.slice(0, 2) || "书"}</div>
                   <div className="book-info">
-                    <div className="book-title">{book.title}</div>
-                    <div className="book-id">{book.book_id}</div>
-                    <div className="book-date">{book.created_at || "-"}</div>
+                  <div className="book-title">{book.title}</div>
+                  <div className="book-id">{book.book_id}</div>
+                  <div className="book-date">{book.created_at || "-"}</div>
+                  <div className="book-date">
+                    Tokens:{" "}
+                    {(usageByBook[book.book_id]?.tokens_in || 0) +
+                      (usageByBook[book.book_id]?.tokens_out || 0)}{" "}
+                    (calls {usageByBook[book.book_id]?.calls || 0})
                   </div>
                 </div>
-              ))
-            )}
+              </div>
+            ))
+          )}
           </div>
         </section>
       </main>

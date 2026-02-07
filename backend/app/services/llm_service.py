@@ -2,39 +2,31 @@ from __future__ import annotations
 
 import json
 import re
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 import httpx
 from jsonschema import validate, ValidationError
+from pydantic import BaseModel
+from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.core.json_schema import LLM_OUTPUT_SCHEMA
+from app.services.prompt_strategy import build_prompt
+from app.models import ApiAsset, Book
+from app.utils.crypto import decrypt_value
+
+
+class LLMConfig(BaseModel):
+    provider: str = "qwen"
+    model: str | None = None
+    api_key: str | None = None
+    base_url: str | None = None
+    api_path: str | None = None
 
 
 # 生成 LLM 提示词（控制输出结构与重要性）
-def _build_prompt(text: str) -> str:
-    return (
-        "你是资深知识图谱抽取专家。\n"
-        "目标：只抽取真正关键、可复用的实体与关系，过滤噪声和无关细节。\n"
-        "规则：\n"
-        "1) 实体必须是“概念/人物/组织/地点/技术/事件”等核心名词，避免长句或碎片。\n"
-        "2) 实体需去重，名称尽量短；只保留能代表章节主题的实体。\n"
-        "3) 关系必须有明确证据句（来自原文），不要凭空推断。\n"
-        "4) 实体和关系按重要性排序，最多实体 10 个、关系 12 条。\n"
-        "5) 返回严格 JSON，只能包含 keys: entities, relations；不要代码块、不要解释。\n"
-        "6) count 表示实体在文本中出现的次数（可用粗略计数，最少为 1）。\n"
-        "输出格式（必须严格一致）：\n"
-        "{\n"
-        "  \"entities\": [\n"
-        "    {\"name\": \"实体名\", \"type\": \"类型\", \"count\": 3}\n"
-        "  ],\n"
-        "  \"relations\": [\n"
-        "    {\"source\": \"实体A\", \"target\": \"实体B\", \"relation\": \"关系\", \"evidence\": \"原文短句\"}\n"
-        "  ]\n"
-        "}\n"
-        "禁止输出额外字段。\n\n"
-        f"文本：\n{text}\n"
-    )
+def _build_prompt(text: str, book_type: str | None) -> str:
+    return build_prompt(text, book_type)
 
 
 # 当没有配置 LLM_KEY 时返回最小可运行结果
@@ -64,19 +56,26 @@ def get_llm_info(provider_override: str | None = None) -> Dict[str, str]:
     provider = (provider_override or settings.llm_provider).lower()
     if provider == "gemini":
         return {"provider": "Gemini", "model": settings.gemini_model}
+    if provider == "custom":
+        return {"provider": "自定义", "model": ""}
     return {"provider": "通义千问", "model": settings.llm_model}
 
 # 调用 Gemini API
-def _call_gemini(text: str) -> Dict[str, Any]:
+def _call_gemini(
+    text: str,
+    model: str | None = None,
+    api_key: str | None = None,
+    book_type: str | None = None,
+) -> Dict[str, Any]:
     if not settings.gemini_api_key:
         return _stub_result(text)
 
     from google import genai
 
-    client = genai.Client(api_key=settings.gemini_api_key)
+    client = genai.Client(api_key=api_key or settings.gemini_api_key)
     response = client.models.generate_content(
-        model=settings.gemini_model,
-        contents=_build_prompt(text),
+        model=model or settings.gemini_model,
+        contents=_build_prompt(text, book_type),
     )
     content = response.text or ""
     return json.loads(_strip_json_fence(content))
@@ -94,27 +93,22 @@ def estimate_tokens(text: str) -> int:
 
 
 # 调用 LLM 服务并解析为 JSON
-def _call_llm(text: str, provider_override: str | None = None) -> Dict[str, Any]:
-    provider = (provider_override or settings.llm_provider).lower()
-    if provider == "gemini":
-        return _call_gemini(text)
-    if not settings.llm_api_key:
+def _call_openai_compatible(text: str, config: LLMConfig, book_type: str | None) -> Dict[str, Any]:
+    if not config.api_key:
         return _stub_result(text)
-
-    # 组装 OpenAI 兼容请求
-    url = f"{settings.llm_base_url.rstrip('/')}/chat/completions"
-    headers = {"Authorization": f"Bearer {settings.llm_api_key}"}
+    base_url = config.base_url or settings.llm_base_url
+    path = config.api_path or "/chat/completions"
+    url = f"{base_url.rstrip('/')}{path}"
+    headers = {"Authorization": f"Bearer {config.api_key}"}
     payload = {
-        "model": settings.llm_model,
+        "model": config.model or settings.llm_model,
         "temperature": 0.1,
         "messages": [
             {"role": "system", "content": "Return only valid JSON."},
-            {"role": "user", "content": _build_prompt(text)},
+            {"role": "user", "content": _build_prompt(text, book_type)},
         ],
         "response_format": {"type": "json_object"},
     }
-
-    # 发起同步 HTTP 请求
     with httpx.Client(timeout=settings.llm_timeout_seconds) as client:
         response = client.post(url, headers=headers, json=payload)
         response.raise_for_status()
@@ -123,14 +117,60 @@ def _call_llm(text: str, provider_override: str | None = None) -> Dict[str, Any]
         return json.loads(_strip_json_fence(content))
 
 
+def _call_llm(
+    text: str,
+    provider_override: str | None = None,
+    config_override: LLMConfig | None = None,
+    book_type: str | None = None,
+) -> Dict[str, Any]:
+    provider = (provider_override or settings.llm_provider).lower()
+    if provider == "gemini":
+        return _call_gemini(text, book_type=book_type)
+    if provider == "custom" and config_override:
+        if config_override.provider.lower() == "gemini":
+            return _call_gemini(
+                text, model=config_override.model, api_key=config_override.api_key, book_type=book_type
+            )
+        return _call_openai_compatible(text, config_override, book_type)
+
+    if not settings.llm_api_key:
+        return _stub_result(text)
+    default_config = LLMConfig(
+        provider=provider,
+        model=settings.llm_model,
+        api_key=settings.llm_api_key,
+        base_url=settings.llm_base_url,
+    )
+    return _call_openai_compatible(text, default_config, book_type)
+
+
+def resolve_asset_config(db: Session, book: Book) -> LLMConfig | None:
+    if not book.llm_asset_id:
+        return None
+    asset = db.get(ApiAsset, book.llm_asset_id)
+    if not asset:
+        return None
+    return LLMConfig(
+        provider=asset.provider,
+        model=book.llm_model or (asset.models[0] if asset.models else None),
+        api_key=decrypt_value(asset.api_key),
+        base_url=asset.base_url,
+        api_path=asset.api_path,
+    )
+
+
 # 抽取并进行 JSON Schema 校验，失败自动重试
 def extract_with_validation(
-    text: str, max_retries: int = 2, provider_override: str | None = None
+    text: str,
+    max_retries: int = 2,
+    provider_override: str | None = None,
+    config_override: LLMConfig | None = None,
+    book_type: str | None = None,
 ) -> Dict[str, Any]:
     last_error: str | None = None
     for _ in range(max_retries + 1):
         try:
-            result = _call_llm(text, provider_override)
+            result = _call_llm(text, provider_override, config_override, book_type)
             # 校验结构合法性
             validate(instance=result, schema=LLM_OUTPUT_SCHEMA)
             # 控制输出规模，防止过大

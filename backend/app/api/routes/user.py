@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.core.auth import UserContext, get_current_user
 from app.core.database import get_db
-from app.core.schemas import UserBook, UserProfile
-from app.models import Book, Profile
+from app.core.schemas import UserBook, UserProfile, UserUsageBookRow
+from app.models import Book, Profile, LLMUsageEvent
 
 
 router = APIRouter()
@@ -54,4 +55,31 @@ def list_user_books(
             created_at=book.created_at.isoformat() if book.created_at else None,
         )
         for book in rows
+    ]
+
+
+@router.get("/usage", response_model=list[UserUsageBookRow])
+def get_user_usage(
+    db: Session = Depends(get_db),
+    user: UserContext = Depends(get_current_user),
+) -> list[UserUsageBookRow]:
+    rows = (
+        db.query(
+            LLMUsageEvent.book_id,
+            func.count(LLMUsageEvent.id),
+            func.coalesce(func.sum(LLMUsageEvent.tokens_in), 0),
+            func.coalesce(func.sum(LLMUsageEvent.tokens_out), 0),
+        )
+        .filter(LLMUsageEvent.user_id == user.user_id)
+        .group_by(LLMUsageEvent.book_id)
+        .all()
+    )
+    return [
+        UserUsageBookRow(
+            book_id=str(book_id),
+            calls=int(calls or 0),
+            tokens_in=int(tokens_in or 0),
+            tokens_out=int(tokens_out or 0),
+        )
+        for book_id, calls, tokens_in, tokens_out in rows
     ]

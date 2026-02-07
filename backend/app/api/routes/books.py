@@ -2,25 +2,36 @@ from __future__ import annotations
 
 import os
 import shutil
+from uuid import uuid4
 from datetime import datetime, timedelta
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, Query
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, Query, Form
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 from starlette.responses import FileResponse
 
+from app.core.book_types import normalize_book_type
 from app.core.database import get_db
+from app.core.config import settings
 from app.core.schemas import (
     ChapterListResponse,
     ChapterMarkdownResponse,
     KnowledgeGraph,
     ProcessResponse,
     UploadResponse,
+    PublishBookRequest,
+    PublishBookByIdRequest,
+    PublicBookOut,
+    BookUsageResponse,
+    LLMUsageSummary,
 )
 from app.core.celery_app import celery_app
 from app.core.auth import UserContext, get_current_user
-from app.models import Book, Chapter, ChapterGraph
+from app.models import Book, Chapter, ChapterGraph, ApiAsset, PublicBook, LLMUsageEvent, UserSettings
 from app.services.llm_service import get_llm_info
 from app.services.md_service import load_chapter_text
+from app.services.pdf_service import estimate_pdf_units
+from app.services.statistics import record_book_upload
 from app.utils.file_store import ensure_book_dir, new_book_id
 
 
@@ -69,24 +80,41 @@ def _refresh_book_status(db: Session, book_id: str) -> None:
 @router.post("/upload", response_model=UploadResponse)
 async def upload_book(
     file: UploadFile = File(...),
+    book_type: str = Form(...),
     db: Session = Depends(get_db),
     user: UserContext = Depends(get_current_user),
 ) -> UploadResponse:
     if not file.filename or not file.filename.lower().endswith(".pdf"):
         raise HTTPException(status_code=400, detail="Only PDF files are supported.")
 
+    normalized_type = normalize_book_type(book_type)
+
+    # 临时保存 PDF 用于字数估算
+    temp_dir = os.path.join(settings.data_dir, "uploads", f"tmp_{uuid4().hex}")
+    os.makedirs(temp_dir, exist_ok=True)
+    temp_pdf_path = os.path.join(temp_dir, "source.pdf")
+    with open(temp_pdf_path, "wb") as buffer:
+        shutil.copyfileobj(file.file, buffer)
+
+    word_count = estimate_pdf_units(temp_pdf_path)
+
     # 生成 book_id 并写入磁盘
-    book_id = new_book_id()
+    book_id = new_book_id(normalized_type, word_count)
+    for _ in range(5):
+        if not db.get(Book, book_id):
+            break
+        book_id = new_book_id(normalized_type, word_count)
     book_dir = ensure_book_dir(book_id)
     pdf_path = os.path.join(book_dir, "source.pdf")
-
-    with open(pdf_path, "wb") as buffer:
-        shutil.copyfileobj(file.file, buffer)
+    shutil.move(temp_pdf_path, pdf_path)
+    shutil.rmtree(temp_dir, ignore_errors=True)
 
     # 写入数据库
     book = Book(
         id=book_id,
         user_id=user.user_id,
+        book_type=normalized_type,
+        word_count=word_count,
         filename=file.filename,
         pdf_path=pdf_path,
         status="uploaded",
@@ -94,15 +122,23 @@ async def upload_book(
     )
     db.add(book)
     db.commit()
+    record_book_upload(db, normalized_type, book_id)
 
-    return UploadResponse(book_id=book_id, filename=file.filename)
+    return UploadResponse(
+        book_id=book_id,
+        filename=file.filename,
+        book_type=normalized_type,
+        word_count=word_count,
+    )
 
 
 # 触发全书处理流水线
 @router.post("/{book_id}/process", response_model=ProcessResponse)
 def process_book(
     book_id: str,
-    llm: str = Query("qwen", description="llm provider: gemini or qwen"),
+    llm: str = Query("qwen", description="llm provider: gemini, qwen, or custom"),
+    asset_id: str | None = Query(None, description="LLM asset id"),
+    asset_model: str | None = Query(None, description="LLM model name"),
     db: Session = Depends(get_db),
     user: UserContext = Depends(get_current_user),
 ) -> ProcessResponse:
@@ -111,8 +147,28 @@ def process_book(
         raise HTTPException(status_code=404, detail="Book not found.")
 
     provider = llm.lower()
-    if provider not in {"gemini", "qwen"}:
+    if provider not in {"gemini", "qwen", "custom"}:
         raise HTTPException(status_code=400, detail="Invalid llm provider.")
+
+    # Chatbox-like default: llm=custom + no asset_id uses /api/settings default.
+    if provider == "custom" and not asset_id:
+        settings_row = db.get(UserSettings, user.user_id)
+        if settings_row and settings_row.default_asset_id:
+            asset_id = settings_row.default_asset_id
+            asset_model = settings_row.default_model
+        else:
+            raise HTTPException(status_code=400, detail="No default asset configured.")
+
+    if asset_id:
+        asset = db.get(ApiAsset, asset_id)
+        if not asset or asset.user_id != user.user_id:
+            raise HTTPException(status_code=404, detail="Asset not found.")
+        book.llm_asset_id = asset_id
+        book.llm_model = asset_model or (asset.models[0] if asset.models else None)
+        provider = "custom"
+    else:
+        book.llm_asset_id = None
+        book.llm_model = None
 
     BOOK_LLM_PROVIDER[book_id] = provider
     book.last_seen_at = datetime.utcnow()
@@ -175,6 +231,13 @@ def list_chapters(
         db.commit()
         _refresh_book_status(db, book_id)
     llm_info = get_llm_info(BOOK_LLM_PROVIDER.get(book_id))
+    if book.llm_asset_id:
+        asset = db.get(ApiAsset, book.llm_asset_id)
+        if asset:
+            llm_info = {
+                "provider": asset.provider,
+                "model": book.llm_model or (asset.models[0] if asset.models else ""),
+            }
 
     return ChapterListResponse(
         book_id=book_id,
@@ -257,3 +320,136 @@ def get_book_pdf(
         raise HTTPException(status_code=404, detail="Book not found.")
     headers = {"Content-Disposition": f'inline; filename="{book.filename}"'}
     return FileResponse(book.pdf_path, media_type="application/pdf", headers=headers)
+
+
+@router.post("/{book_id}/publish", response_model=PublicBookOut)
+def publish_book(
+    book_id: str,
+    payload: PublishBookRequest | None = None,
+    db: Session = Depends(get_db),
+    user: UserContext = Depends(get_current_user),
+) -> PublicBookOut:
+    book = db.get(Book, book_id)
+    if not book or book.user_id != user.user_id:
+        raise HTTPException(status_code=404, detail="Book not found.")
+
+    payload = payload or PublishBookRequest()
+    title = (payload.title or book.filename).strip() or book.filename
+    cover_url = (payload.cover_url or "").strip() or None
+
+    now = datetime.utcnow()
+    row = db.get(PublicBook, book_id)
+    if not row:
+        row = PublicBook(
+            id=book_id,
+            owner_user_id=user.user_id,
+            title=title,
+            cover_url=cover_url,
+            favorites_count=0,
+            reposts_count=0,
+            published_at=now,
+            updated_at=now,
+        )
+        db.add(row)
+    else:
+        if row.owner_user_id != user.user_id:
+            raise HTTPException(status_code=403, detail="Not allowed.")
+        row.title = title
+        row.cover_url = cover_url
+        row.updated_at = now
+    db.commit()
+    db.refresh(row)
+    return PublicBookOut(
+        id=row.id,
+        title=row.title,
+        cover_url=row.cover_url,
+        owner_user_id=row.owner_user_id,
+        favorites_count=row.favorites_count or 0,
+        reposts_count=row.reposts_count or 0,
+        published_at=row.published_at.isoformat() if row.published_at else None,
+        updated_at=row.updated_at.isoformat() if row.updated_at else None,
+    )
+
+
+@router.post("/publish", response_model=PublicBookOut)
+def publish_book_by_body(
+    payload: PublishBookByIdRequest,
+    db: Session = Depends(get_db),
+    user: UserContext = Depends(get_current_user),
+) -> PublicBookOut:
+    return publish_book(
+        book_id=payload.book_id,
+        payload=PublishBookRequest(title=payload.title, cover_url=payload.cover_url),
+        db=db,
+        user=user,
+    )
+
+
+@router.delete("/{book_id}/publish")
+def unpublish_book(
+    book_id: str,
+    db: Session = Depends(get_db),
+    user: UserContext = Depends(get_current_user),
+) -> dict:
+    row = db.get(PublicBook, book_id)
+    if not row:
+        return {"ok": True, "book_id": book_id, "published": False}
+    if row.owner_user_id != user.user_id:
+        raise HTTPException(status_code=403, detail="Not allowed.")
+    db.delete(row)
+    db.commit()
+    return {"ok": True, "book_id": book_id, "published": False}
+
+
+@router.get("/{book_id}/usage", response_model=BookUsageResponse)
+def get_book_usage(
+    book_id: str,
+    db: Session = Depends(get_db),
+    user: UserContext = Depends(get_current_user),
+) -> BookUsageResponse:
+    book = db.get(Book, book_id)
+    if not book or book.user_id != user.user_id:
+        raise HTTPException(status_code=404, detail="Book not found.")
+
+    rows = (
+        db.query(
+            LLMUsageEvent.provider,
+            LLMUsageEvent.model,
+            func.count(LLMUsageEvent.id),
+            func.coalesce(func.sum(LLMUsageEvent.tokens_in), 0),
+            func.coalesce(func.sum(LLMUsageEvent.tokens_out), 0),
+        )
+        .filter(LLMUsageEvent.user_id == user.user_id, LLMUsageEvent.book_id == book_id)
+        .group_by(LLMUsageEvent.provider, LLMUsageEvent.model)
+        .order_by(LLMUsageEvent.provider.asc())
+        .all()
+    )
+
+    by_model: list[LLMUsageSummary] = []
+    total_calls = 0
+    total_in = 0
+    total_out = 0
+    for provider, model, calls, tokens_in, tokens_out in rows:
+        calls_i = int(calls or 0)
+        in_i = int(tokens_in or 0)
+        out_i = int(tokens_out or 0)
+        by_model.append(
+            LLMUsageSummary(
+                provider=str(provider),
+                model=str(model) if model else None,
+                calls=calls_i,
+                tokens_in=in_i,
+                tokens_out=out_i,
+            )
+        )
+        total_calls += calls_i
+        total_in += in_i
+        total_out += out_i
+
+    return BookUsageResponse(
+        book_id=book_id,
+        calls=total_calls,
+        tokens_in=total_in,
+        tokens_out=total_out,
+        by_model=by_model,
+    )

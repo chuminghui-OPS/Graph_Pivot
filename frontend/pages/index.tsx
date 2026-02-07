@@ -5,15 +5,19 @@ import { GraphView } from "../components/GraphView";
 import { ReaderPanel } from "../components/ReaderPanel";
 import {
   API_BASE,
+  ApiAsset,
   Chapter,
   fetchChapterGraph,
   fetchChapterMarkdown,
   fetchChapters,
+  fetchAssets,
+  fetchBookTypes,
   heartbeatBook,
   processBook,
   uploadBook,
   fetchBookPdfUrl,
-  KnowledgeGraph
+  KnowledgeGraph,
+  BookType
 } from "../lib/api";
 import { getSupabaseClient, hasSupabaseConfig } from "../lib/supabase";
 
@@ -35,6 +39,18 @@ const TERMINAL_STATUSES = new Set([
   "TIMEOUT",
   "PAUSED"
 ]);
+
+const FALLBACK_BOOK_TYPES: BookType[] = [
+  { key: "literature", code: "B", label: "文学" },
+  { key: "technology", code: "C", label: "科技" },
+  { key: "history", code: "D", label: "历史" },
+  { key: "philosophy", code: "E", label: "哲学" },
+  { key: "economics", code: "F", label: "经济" },
+  { key: "art", code: "G", label: "艺术" },
+  { key: "education", code: "H", label: "教育" },
+  { key: "biography", code: "I", label: "传记" },
+  { key: "other", code: "J", label: "其他" }
+];
 
 const progressFromElapsed = (elapsedMs: number) => {
   let remaining = Math.max(0, elapsedMs);
@@ -74,6 +90,12 @@ export default function Home() {
   const [pdfUrl, setPdfUrl] = useState<string | null>(null);
   const [authReady, setAuthReady] = useState(false);
   const hasConfig = hasSupabaseConfig();
+  const [assets, setAssets] = useState<ApiAsset[]>([]);
+  const [useAsset, setUseAsset] = useState(false);
+  const [selectedAssetId, setSelectedAssetId] = useState<string | null>(null);
+  const [selectedAssetModel, setSelectedAssetModel] = useState<string>("");
+  const [bookType, setBookType] = useState<string>("technology");
+  const [bookTypes, setBookTypes] = useState<BookType[]>(FALLBACK_BOOK_TYPES);
 
   useEffect(() => {
     let mounted = true;
@@ -106,6 +128,23 @@ export default function Home() {
       data.subscription.unsubscribe();
     };
   }, [router]);
+
+  useEffect(() => {
+    const loadBookTypes = async () => {
+      try {
+        const types = await fetchBookTypes();
+        if (types.length > 0) {
+          setBookTypes(types);
+          if (!types.find((item) => item.key === bookType)) {
+            setBookType(types[0].key);
+          }
+        }
+      } catch {
+        // ignore; use fallback
+      }
+    };
+    loadBookTypes();
+  }, [bookType]);
 
   const totalChapters = chapters.length;
   const doneCount = chapters.filter((chapter) => chapter.status === "DONE").length;
@@ -194,6 +233,23 @@ export default function Home() {
       if (timer) clearTimeout(timer);
     };
   }, [bookId, activeChapterId]);
+
+  useEffect(() => {
+    const loadAssets = async () => {
+      try {
+        const data = await fetchAssets();
+        setAssets(data);
+        if (!selectedAssetId && data.length > 0) {
+          setSelectedAssetId(data[0].id);
+          const firstModel = data[0].models?.[0] || "";
+          setSelectedAssetModel(firstModel);
+        }
+      } catch {
+        // ignore asset errors on homepage
+      }
+    };
+    loadAssets();
+  }, []);
 
   useEffect(() => {
     if (!bookId) {
@@ -329,13 +385,18 @@ export default function Home() {
     setUploading(true);
     setError(null);
     try {
-      const uploadResult = await uploadBook(file);
+      const uploadResult = await uploadBook(file, bookType);
       setBookId(uploadResult.book_id);
       setChapters([]);
       setActiveChapterId(null);
       setGraph(null);
       setMarkdown("");
-      await processBook(uploadResult.book_id, selectedLlm);
+      await processBook(
+        uploadResult.book_id,
+        selectedLlm,
+        useAsset ? selectedAssetId : null,
+        useAsset ? selectedAssetModel : null
+      );
     } catch (err: any) {
       setError(err.message || "Upload failed");
     } finally {
@@ -392,9 +453,64 @@ export default function Home() {
               </span>
             ) : null}
           </div>
+          <div className="llm-row">
+            <span className="llm-label">使用资产:</span>
+            <label className="llm-meta">
+              <input
+                type="checkbox"
+                checked={useAsset}
+                onChange={(event) => setUseAsset(event.target.checked)}
+              />
+              启用
+            </label>
+            {useAsset ? (
+              <>
+                <select
+                  value={selectedAssetId || ""}
+                  onChange={(event) => {
+                    const id = event.target.value;
+                    setSelectedAssetId(id);
+                    const asset = assets.find((item) => item.id === id);
+                    setSelectedAssetModel(asset?.models?.[0] || "");
+                  }}
+                >
+                  {assets.length === 0 ? (
+                    <option value="">无可用资产</option>
+                  ) : (
+                    assets.map((asset) => (
+                      <option key={asset.id} value={asset.id}>
+                        {asset.name} ({asset.provider})
+                      </option>
+                    ))
+                  )}
+                </select>
+                <input
+                  type="text"
+                  placeholder="模型名称"
+                  value={selectedAssetModel}
+                  onChange={(event) => setSelectedAssetModel(event.target.value)}
+                  style={{ minWidth: 160 }}
+                />
+              </>
+            ) : null}
+          </div>
         </div>
           <div className="upload-card">
           <div className="upload-title">Upload PDF</div>
+          <div className="upload-title" style={{ marginTop: 12 }}>
+            书籍类型
+          </div>
+          <select
+            value={bookType}
+            onChange={(event) => setBookType(event.target.value)}
+            style={{ marginBottom: 8 }}
+          >
+            {bookTypes.map((item) => (
+              <option key={item.key} value={item.key}>
+                {item.label}
+              </option>
+            ))}
+          </select>
           <input
             type="file"
             accept="application/pdf"

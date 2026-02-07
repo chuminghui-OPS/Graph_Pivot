@@ -60,9 +60,10 @@ export interface KnowledgeGraph {
   }[];
 }
 
-export async function uploadBook(file: File) {
+export async function uploadBook(file: File, bookType: string) {
   const formData = new FormData();
   formData.append("file", file);
+  formData.append("book_type", bookType);
   const res = await authFetch(`${API_BASE}/api/books/upload`, {
     method: "POST",
     body: formData
@@ -73,9 +74,20 @@ export async function uploadBook(file: File) {
   return res.json();
 }
 
-export async function processBook(bookId: string, llmProvider: string) {
+export async function processBook(
+  bookId: string,
+  llmProvider: string,
+  assetId?: string | null,
+  assetModel?: string | null
+) {
   const url = new URL(`${API_BASE}/api/books/${bookId}/process`);
   url.searchParams.set("llm", llmProvider);
+  if (assetId) {
+    url.searchParams.set("asset_id", assetId);
+    if (assetModel) {
+      url.searchParams.set("asset_model", assetModel);
+    }
+  }
   const res = await authFetch(url.toString(), {
     method: "POST"
   });
@@ -147,8 +159,27 @@ export interface UserBook {
   created_at?: string;
 }
 
+export interface UserUsageBookRow {
+  book_id: string;
+  calls: number;
+  tokens_in: number;
+  tokens_out: number;
+}
+
 export interface ApiAsset {
   id: string;
+  name: string;
+  provider: string;
+  api_mode: string;
+  api_key_masked?: string | null;
+  base_url?: string | null;
+  api_path?: string | null;
+  models?: string[] | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+}
+
+export interface ApiAssetCreateInput {
   name: string;
   provider: string;
   api_mode: string;
@@ -156,8 +187,30 @@ export interface ApiAsset {
   base_url?: string | null;
   api_path?: string | null;
   models?: string[] | null;
-  created_at?: string | null;
-  updated_at?: string | null;
+}
+
+export interface ApiAssetUpdateInput {
+  name?: string;
+  provider?: string;
+  api_mode?: string;
+  api_key?: string;
+  base_url?: string | null;
+  api_path?: string | null;
+  models?: string[] | null;
+}
+
+export interface BookType {
+  key: string;
+  code: string;
+  label: string;
+}
+
+export async function fetchBookTypes() {
+  const res = await fetch(`${API_BASE}/api/book-types`);
+  if (!res.ok) {
+    throw new Error(await res.text());
+  }
+  return (await res.json()) as BookType[];
 }
 
 export async function fetchUserProfile() {
@@ -176,6 +229,14 @@ export async function fetchUserBooks() {
   return (await res.json()) as UserBook[];
 }
 
+export async function fetchUserUsage() {
+  const res = await authFetch(`${API_BASE}/api/user/usage`);
+  if (!res.ok) {
+    throw new Error(await res.text());
+  }
+  return (await res.json()) as UserUsageBookRow[];
+}
+
 export async function fetchAssets() {
   const res = await authFetch(`${API_BASE}/api/assets`);
   if (!res.ok) {
@@ -184,7 +245,7 @@ export async function fetchAssets() {
   return (await res.json()) as ApiAsset[];
 }
 
-export async function createAsset(payload: Omit<ApiAsset, "id" | "created_at" | "updated_at">) {
+export async function createAsset(payload: ApiAssetCreateInput) {
   const res = await authFetch(`${API_BASE}/api/assets`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -196,7 +257,7 @@ export async function createAsset(payload: Omit<ApiAsset, "id" | "created_at" | 
   return (await res.json()) as ApiAsset;
 }
 
-export async function updateAsset(assetId: string, payload: Partial<ApiAsset>) {
+export async function updateAsset(assetId: string, payload: ApiAssetUpdateInput) {
   const res = await authFetch(`${API_BASE}/api/assets/${assetId}`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
