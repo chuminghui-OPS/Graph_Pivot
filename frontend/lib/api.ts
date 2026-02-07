@@ -183,7 +183,7 @@ export interface ApiAssetCreateInput {
   name: string;
   provider: string;
   api_mode: string;
-  api_key: string;
+  api_key?: string;
   base_url?: string | null;
   api_path?: string | null;
   models?: string[] | null;
@@ -205,12 +205,34 @@ export interface BookType {
   label: string;
 }
 
+export interface PublicBook {
+  id: string;
+  title: string;
+  cover_url?: string | null;
+  owner_user_id: string;
+  favorites_count: number;
+  reposts_count: number;
+  published_at?: string | null;
+  updated_at?: string | null;
+}
+
 export async function fetchBookTypes() {
   const res = await fetch(`${API_BASE}/api/book-types`);
   if (!res.ok) {
     throw new Error(await res.text());
   }
   return (await res.json()) as BookType[];
+}
+
+export async function fetchPublicBooks(limit = 20, offset = 0) {
+  const url = new URL(`${API_BASE}/api/public/books`);
+  url.searchParams.set("limit", String(limit));
+  url.searchParams.set("offset", String(offset));
+  const res = await fetch(url.toString());
+  if (!res.ok) {
+    throw new Error(await res.text());
+  }
+  return (await res.json()) as PublicBook[];
 }
 
 export async function fetchUserProfile() {
@@ -255,6 +277,27 @@ export async function createAsset(payload: ApiAssetCreateInput) {
     throw new Error(await res.text());
   }
   return (await res.json()) as ApiAsset;
+}
+
+export async function fetchAssetModels(assetId: string) {
+  const res = await authFetch(`${API_BASE}/api/assets/${assetId}/models/fetch`, {
+    method: "POST"
+  });
+  if (!res.ok) {
+    throw new Error(await res.text());
+  }
+  return (await res.json()) as ApiAsset;
+}
+
+export async function discoverAssetModels(assetId: string) {
+  const res = await authFetch(`${API_BASE}/api/assets/${assetId}/models/discover`, {
+    method: "POST"
+  });
+  if (!res.ok) {
+    throw new Error(await res.text());
+  }
+  const data = (await res.json()) as { models?: string[] };
+  return data.models || [];
 }
 
 export async function updateAsset(assetId: string, payload: ApiAssetUpdateInput) {

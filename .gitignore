@@ -3,10 +3,10 @@ frontend/node_modules/
 data/
 wheels/
 backend/wheels/
-镜像包 .tar/
 *.tar
 *.tar.gz
 *.tgz
+resource .tar
 
 # env files
 .env

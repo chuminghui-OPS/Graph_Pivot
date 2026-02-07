@@ -55,6 +55,29 @@ def init_db() -> None:
             conn.execute(text("SELECT pg_advisory_lock(:lock_id)"), {"lock_id": lock_id})
             try:
                 Base.metadata.create_all(bind=conn)
+                # Best-effort column migrations for existing tables.
+                def _ensure_column(table: str, column: str, ddl: str) -> None:
+                    exists = conn.execute(
+                        text(
+                            "SELECT 1 FROM information_schema.columns "
+                            "WHERE table_name=:table AND column_name=:column"
+                        ),
+                        {"table": table, "column": column},
+                    ).fetchone()
+                    if not exists:
+                        conn.execute(text(ddl))
+
+                _ensure_column("books", "last_seen_at", "ALTER TABLE books ADD COLUMN last_seen_at TIMESTAMP")
+                _ensure_column("books", "book_type", "ALTER TABLE books ADD COLUMN book_type VARCHAR")
+                _ensure_column("books", "word_count", "ALTER TABLE books ADD COLUMN word_count INTEGER")
+                _ensure_column("books", "user_id", "ALTER TABLE books ADD COLUMN user_id VARCHAR")
+                _ensure_column("books", "llm_asset_id", "ALTER TABLE books ADD COLUMN llm_asset_id VARCHAR")
+                _ensure_column("books", "llm_model", "ALTER TABLE books ADD COLUMN llm_model VARCHAR")
+                _ensure_column(
+                    "chapters",
+                    "processing_started_at",
+                    "ALTER TABLE chapters ADD COLUMN processing_started_at TIMESTAMP",
+                )
             finally:
                 conn.execute(text("SELECT pg_advisory_unlock(:lock_id)"), {"lock_id": lock_id})
             conn.commit()

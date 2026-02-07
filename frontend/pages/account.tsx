@@ -8,6 +8,7 @@ import {
   UserUsageBookRow,
   createAsset,
   deleteAsset,
+  discoverAssetModels,
   fetchAssets,
   fetchUserBooks,
   fetchUserUsage,
@@ -15,17 +16,6 @@ import {
   updateAsset
 } from "../lib/api";
 import { getSupabaseClient, hasSupabaseConfig } from "../lib/supabase";
-
-const PROVIDER_OPTIONS = [
-  "OpenAI",
-  "OpenRouter",
-  "Azure OpenAI",
-  "Claude",
-  "Gemini",
-  "Qwen",
-  "Moonshot",
-  "Groq"
-];
 
 function AccountPage() {
   const router = useRouter();
@@ -35,6 +25,15 @@ function AccountPage() {
   const [assets, setAssets] = useState<ApiAsset[]>([]);
   const [activeAssetId, setActiveAssetId] = useState<string | null>(null);
   const [showModal, setShowModal] = useState(false);
+  const [createForm, setCreateForm] = useState({
+    name: "",
+    provider: "OpenAI",
+    api_mode: "openai_compatible"
+  });
+  const [newModelName, setNewModelName] = useState("");
+  const [showModelPicker, setShowModelPicker] = useState(false);
+  const [availableModels, setAvailableModels] = useState<string[]>([]);
+  const [modelSearch, setModelSearch] = useState("");
   const [form, setForm] = useState({
     name: "",
     provider: "OpenAI",
@@ -70,6 +69,12 @@ function AccountPage() {
     () => assets.find((item) => item.id === activeAssetId) || null,
     [assets, activeAssetId]
   );
+
+  const filteredAvailableModels = useMemo(() => {
+    const q = modelSearch.trim().toLowerCase();
+    if (!q) return availableModels;
+    return availableModels.filter((m) => m.toLowerCase().includes(q));
+  }, [availableModels, modelSearch]);
 
   useEffect(() => {
     const load = async () => {
@@ -135,22 +140,113 @@ function AccountPage() {
     }
   };
 
+  const _parseModels = (value: string) =>
+    value
+      ? value
+          .split(",")
+          .map((item) => item.trim())
+          .filter(Boolean)
+      : [];
+
+  const handleAddModel = async () => {
+    if (!activeAsset) return;
+    const model = newModelName.trim();
+    if (!model) {
+      setMessage("请输入模型名称");
+      return;
+    }
+    const models = _parseModels(form.models);
+    if (models.includes(model)) {
+      setMessage("该模型已存在");
+      return;
+    }
+    const next = [...models, model];
+    setForm({ ...form, models: next.join(", ") });
+    setNewModelName("");
+    try {
+      const updated = await updateAsset(activeAsset.id, { models: next });
+      setAssets((prev) => prev.map((item) => (item.id === updated.id ? updated : item)));
+      setMessage("已添加模型");
+      setShowModelPicker(false);
+    } catch (err: any) {
+      setMessage(err.message || "添加模型失败");
+    }
+  };
+
+  const handleFetchModels = async () => {
+    if (!activeAsset) return;
+    try {
+      // Save base_url/api_key first so backend can use it to fetch models.
+      const payload: any = {
+        base_url: form.base_url || null,
+        api_path: form.api_path || null
+      };
+      if (form.api_key) {
+        payload.api_key = form.api_key;
+      }
+      await updateAsset(activeAsset.id, payload);
+
+      const models = await discoverAssetModels(activeAsset.id);
+      setAvailableModels(models);
+      setModelSearch("");
+      setShowModelPicker(true);
+      setMessage(`已获取模型：${models.length} 个`);
+    } catch (err: any) {
+      setMessage(err.message || "获取模型失败");
+    }
+  };
+
+  const handlePickModel = async (modelId: string) => {
+    if (!activeAsset) return;
+    const models = _parseModels(form.models);
+    if (models.includes(modelId)) {
+      return;
+    }
+    const next = [...models, modelId];
+    setForm({ ...form, models: next.join(", ") });
+    try {
+      const updated = await updateAsset(activeAsset.id, { models: next });
+      setAssets((prev) => prev.map((item) => (item.id === updated.id ? updated : item)));
+      setMessage("已添加模型");
+    } catch (err: any) {
+      setMessage(err.message || "添加模型失败");
+    }
+  };
+
+  const handleImportAllModels = async () => {
+    if (!activeAsset) return;
+    const current = new Set(_parseModels(form.models));
+    for (const item of availableModels) {
+      current.add(item);
+    }
+    const next = Array.from(current);
+    setForm({ ...form, models: next.join(", ") });
+    try {
+      const updated = await updateAsset(activeAsset.id, { models: next });
+      setAssets((prev) => prev.map((item) => (item.id === updated.id ? updated : item)));
+      setMessage(`已导入 ${next.length} 个模型`);
+      setShowModelPicker(false);
+    } catch (err: any) {
+      setMessage(err.message || "导入失败");
+    }
+  };
+
   const handleCreate = async () => {
     try {
-      if (!form.api_key) {
-        setMessage("请输入 API 密钥");
+      const name = createForm.name.trim();
+      if (!name) {
+        setMessage("请输入名称");
         return;
       }
       const payload = {
-        name: form.name,
-        provider: form.provider,
-        api_mode: form.api_mode,
-        api_key: form.api_key,
-        base_url: form.base_url || null,
-        api_path: form.api_path || null,
-        models: form.models
-          ? form.models.split(",").map((m) => m.trim()).filter(Boolean)
-          : []
+        name,
+        provider: createForm.provider,
+        api_mode: createForm.api_mode,
+        // Allow creating a provider first; user can set key/host later.
+        api_key: "",
+        base_url: null,
+        api_path: null,
+        models: []
       };
       const created = await createAsset(payload as any);
       setAssets((prev) => [created, ...prev]);
@@ -207,19 +303,11 @@ function AccountPage() {
           <button
             className="primary"
             onClick={() => {
-              setForm({
-                name: "",
-                provider: "OpenAI",
-                api_mode: "openai_compatible",
-                api_key: "",
-                base_url: "",
-                api_path: "",
-                models: ""
-              });
+              setCreateForm({ name: "", provider: "OpenAI", api_mode: "openai_compatible" });
               setShowModal(true);
             }}
           >
-            添加厂商
+            添加模型提供方
           </button>
         </header>
 
@@ -314,12 +402,26 @@ function AccountPage() {
                   </div>
                 </div>
                 <div className="detail-row">
-                  <label>模型列表（逗号分隔）</label>
+                  <label>模型</label>
+                  <div className="model-toolbar">
+                    <input
+                      placeholder="输入模型名称，例如 qwen-long-latest"
+                      value={newModelName}
+                      onChange={(e) => setNewModelName(e.target.value)}
+                    />
+                    <button className="ghost" type="button" onClick={handleAddModel}>
+                      + 新建
+                    </button>
+                    <button className="ghost" type="button" onClick={handleFetchModels}>
+                      获取模型
+                    </button>
+                  </div>
                   <textarea
                     rows={3}
                     value={form.models}
                     onChange={(e) => setForm({ ...form, models: e.target.value })}
                   />
+                  <div className="hint">逗号分隔；也可用上面的「新建 / 获取模型」</div>
                 </div>
                 <div className="detail-actions">
                   <button className="ghost" onClick={handleDelete}>
@@ -364,64 +466,90 @@ function AccountPage() {
       </main>
 
       {showModal ? (
-        <div className="modal-backdrop" onClick={() => setShowModal(false)}>
+        <div className="modal-backdrop">
           <div className="modal" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-title">添加厂商</div>
+            <div className="modal-title">添加模型提供方</div>
             <div className="detail-row">
               <label>名称</label>
               <input
-                value={form.name}
-                onChange={(e) => setForm({ ...form, name: e.target.value })}
+                value={createForm.name}
+                onChange={(e) => setCreateForm({ ...createForm, name: e.target.value })}
               />
             </div>
             <div className="detail-row">
               <label>厂商</label>
               <select
-                value={form.provider}
-                onChange={(e) => setForm({ ...form, provider: e.target.value })}
+                value={createForm.provider}
+                onChange={(e) => setCreateForm({ ...createForm, provider: e.target.value })}
               >
-                {PROVIDER_OPTIONS.map((item) => (
-                  <option key={item} value={item}>
-                    {item}
-                  </option>
-                ))}
+                <option value="OpenAI">OpenAI</option>
+                <option value="OpenRouter">OpenRouter</option>
+                <option value="Azure OpenAI">Azure OpenAI</option>
+                <option value="Claude">Claude</option>
+                <option value="Gemini">Gemini</option>
+                <option value="Qwen">Qwen</option>
+                <option value="Moonshot">Moonshot</option>
+                <option value="Groq">Groq</option>
               </select>
             </div>
             <div className="detail-row">
-              <label>API 密钥</label>
-              <input
-                value={form.api_key}
-                onChange={(e) => setForm({ ...form, api_key: e.target.value })}
-              />
-            </div>
-            <div className="detail-row">
-              <label>API 主机</label>
-              <input
-                value={form.base_url}
-                onChange={(e) => setForm({ ...form, base_url: e.target.value })}
-              />
-            </div>
-            <div className="detail-row">
-              <label>API 路径</label>
-              <input
-                value={form.api_path}
-                onChange={(e) => setForm({ ...form, api_path: e.target.value })}
-              />
-            </div>
-            <div className="detail-row">
-              <label>模型（逗号分隔）</label>
-              <textarea
-                rows={3}
-                value={form.models}
-                onChange={(e) => setForm({ ...form, models: e.target.value })}
-              />
+              <label>API 模式</label>
+              <select
+                value={createForm.api_mode}
+                onChange={(e) => setCreateForm({ ...createForm, api_mode: e.target.value })}
+              >
+                <option value="openai_compatible">OpenAI API 兼容</option>
+                <option value="native">原生</option>
+              </select>
             </div>
             <div className="detail-actions">
               <button className="ghost" onClick={() => setShowModal(false)}>
                 取消
               </button>
               <button className="primary" onClick={handleCreate}>
-                创建
+                添加
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {showModelPicker ? (
+        <div className="modal-backdrop">
+          <div className="modal" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-title">编辑模型</div>
+            <div className="detail-row">
+              <label>搜索</label>
+              <input
+                placeholder="输入模型名称过滤..."
+                value={modelSearch}
+                onChange={(e) => setModelSearch(e.target.value)}
+              />
+            </div>
+            <div className="model-list">
+              {filteredAvailableModels.length === 0 ? (
+                <div className="empty">没有匹配的模型</div>
+              ) : (
+                filteredAvailableModels.map((item) => (
+                  <div key={item} className="model-item">
+                    <div className="model-name">{item}</div>
+                    <button
+                      className="ghost"
+                      type="button"
+                      onClick={() => handlePickModel(item)}
+                    >
+                      +
+                    </button>
+                  </div>
+                ))
+              )}
+            </div>
+            <div className="detail-actions">
+              <button className="ghost" onClick={() => setShowModelPicker(false)}>
+                取消
+              </button>
+              <button className="primary" type="button" onClick={handleImportAllModels}>
+                全部导入
               </button>
             </div>
           </div>
