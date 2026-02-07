@@ -678,6 +678,44 @@ body {
   gap: 10px;
 }
 
+.model-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.model-toolbar input {
+  flex: 1;
+  min-width: 220px;
+}
+
+.model-list {
+  max-height: min(420px, 55vh);
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: rgba(31, 29, 26, 0.03);
+}
+
+.model-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border-bottom: 1px solid rgba(31, 29, 26, 0.08);
+}
+
+.model-item:last-child {
+  border-bottom: none;
+}
+
+.model-name {
+  font-size: 13px;
+  word-break: break-all;
+}
+
 .books-panel {
   background: var(--panel);
   border-radius: 20px;

@@ -82,6 +82,7 @@ class Settings(BaseSettings):
             ".env",
         )
         case_sensitive = False
+        extra = "ignore" if os.getenv("APP_ENV", "dev").lower() == "dev" else "forbid"
 
     # 解析 CORS 允许域名列表（供中间件直接使用）
     @property

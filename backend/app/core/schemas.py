@@ -103,7 +103,7 @@ class ApiAssetCreate(BaseModel):
     name: str
     provider: str
     api_mode: str = "openai_compatible"
-    api_key: str
+    api_key: str = ""
     base_url: Optional[str] = None
     api_path: Optional[str] = None
     models: Optional[List[str]] = None
@@ -130,6 +130,10 @@ class ApiAssetOut(BaseModel):
     models: Optional[List[str]] = None
     created_at: Optional[str] = None
     updated_at: Optional[str] = None
+
+
+class DiscoverModelsResponse(BaseModel):
+    models: List[str] = Field(default_factory=list)
 
 
 class ApiManagerBase(BaseModel):

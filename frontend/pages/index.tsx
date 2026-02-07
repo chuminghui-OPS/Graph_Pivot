@@ -525,6 +525,13 @@ export default function Home() {
             >
               个人中心
             </button>
+            <button
+              className="load-btn"
+              onClick={() => router.push("/public")}
+              type="button"
+            >
+              公开书籍
+            </button>
           </div>
           <div className="upload-title" style={{ marginTop: 12 }}>
             Load Existing Book
