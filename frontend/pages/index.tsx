@@ -41,15 +41,16 @@ const TERMINAL_STATUSES = new Set([
 ]);
 
 const FALLBACK_BOOK_TYPES: BookType[] = [
-  { key: "literature", code: "B", label: "文学" },
-  { key: "technology", code: "C", label: "科技" },
-  { key: "history", code: "D", label: "历史" },
-  { key: "philosophy", code: "E", label: "哲学" },
-  { key: "economics", code: "F", label: "经济" },
-  { key: "art", code: "G", label: "艺术" },
-  { key: "education", code: "H", label: "教育" },
-  { key: "biography", code: "I", label: "传记" },
-  { key: "other", code: "J", label: "其他" }
+  { key: "textbook", code: "B", label: "专业教材/大学教科书" },
+  { key: "handbook", code: "C", label: "专业工具书/行业手册" },
+  { key: "humanities", code: "D", label: "人文社科研究著作" },
+  { key: "exam", code: "E", label: "职业考试备考" },
+  { key: "popular_science", code: "F", label: "科普类书籍" },
+  { key: "business", code: "G", label: "商业/管理/职场" },
+  { key: "history_geo", code: "H", label: "历史/地理叙述类" },
+  { key: "literature", code: "I", label: "纯文学" },
+  { key: "lifestyle", code: "J", label: "生活/休闲" },
+  { key: "general", code: "K", label: "通用规则" }
 ];
 
 const progressFromElapsed = (elapsedMs: number) => {
@@ -94,7 +95,7 @@ export default function Home() {
   const [useAsset, setUseAsset] = useState(false);
   const [selectedAssetId, setSelectedAssetId] = useState<string | null>(null);
   const [selectedAssetModel, setSelectedAssetModel] = useState<string>("");
-  const [bookType, setBookType] = useState<string>("technology");
+  const [bookType, setBookType] = useState<string>("textbook");
   const [bookTypes, setBookTypes] = useState<BookType[]>(FALLBACK_BOOK_TYPES);
 
   useEffect(() => {

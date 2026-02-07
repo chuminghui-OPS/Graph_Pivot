@@ -45,19 +45,20 @@ class PromptStrategy:
 
 
 STRATEGIES = {
+    "textbook": PromptStrategy("重视知识模块、概念、公式/定理/定律与推导关系。"),
+    "handbook": PromptStrategy("重视工具/标准、流程步骤、参数指标与问题-方案关系。"),
+    "humanities": PromptStrategy("重视理论观点、学派流派、人物动机与因果链条。"),
+    "exam": PromptStrategy("重视考点、题型、答题技巧与知识点映射关系。"),
+    "popular_science": PromptStrategy("重视科学概念、现象规律、实验/发现与解释关系。"),
+    "business": PromptStrategy("重视模型方法论、流程步骤、案例与应用关系。"),
+    "history_geo": PromptStrategy("重视历史人物、事件、时间线与地理关联关系。"),
     "literature": PromptStrategy("重视人物、情节、主题意象、叙事关系与修辞线索。"),
-    "technology": PromptStrategy("重视技术概念、方法、算法、系统组件与依赖关系。"),
-    "history": PromptStrategy("重视事件、人物、时间线、因果关系与历史背景。"),
-    "philosophy": PromptStrategy("重视概念、观点、论证结构与思想流派关系。"),
-    "economics": PromptStrategy("重视模型、指标、市场主体、政策工具与因果链。"),
-    "art": PromptStrategy("重视流派、作品、技法、风格特征与影响关系。"),
-    "education": PromptStrategy("重视教学目标、知识点、方法策略与学习路径关系。"),
-    "biography": PromptStrategy("重视人物经历、阶段事件、成就与影响关系。"),
-    "other": PromptStrategy("重视章节主题的核心概念与关键因果关系。"),
+    "lifestyle": PromptStrategy("重视核心对象、工具、步骤流程与适用场景关系。"),
+    "general": PromptStrategy("重视章节主题的核心概念与关键因果关系。"),
 }
 
 
 def build_prompt(text: str, book_type: str | None) -> str:
     normalized = normalize_book_type(book_type)
-    strategy = STRATEGIES.get(normalized, STRATEGIES["other"])
+    strategy = STRATEGIES.get(normalized, STRATEGIES["general"])
     return strategy.build(text)

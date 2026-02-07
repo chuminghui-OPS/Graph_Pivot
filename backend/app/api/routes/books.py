@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import os
 import shutil
-from uuid import uuid4
 from datetime import datetime, timedelta
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, Query, Form
@@ -30,7 +29,6 @@ from app.core.auth import UserContext, get_current_user
 from app.models import Book, Chapter, ChapterGraph, ApiAsset, PublicBook, LLMUsageEvent, UserSettings
 from app.services.llm_service import get_llm_info
 from app.services.md_service import load_chapter_text
-from app.services.pdf_service import estimate_pdf_units
 from app.services.statistics import record_book_upload
 from app.utils.file_store import ensure_book_dir, new_book_id
 
@@ -89,32 +87,25 @@ async def upload_book(
 
     normalized_type = normalize_book_type(book_type)
 
-    # 临时保存 PDF 用于字数估算
-    temp_dir = os.path.join(settings.data_dir, "uploads", f"tmp_{uuid4().hex}")
-    os.makedirs(temp_dir, exist_ok=True)
-    temp_pdf_path = os.path.join(temp_dir, "source.pdf")
-    with open(temp_pdf_path, "wb") as buffer:
-        shutil.copyfileobj(file.file, buffer)
-
-    word_count = estimate_pdf_units(temp_pdf_path)
-
     # 生成 book_id 并写入磁盘
-    book_id = new_book_id(normalized_type, word_count)
+    # 先用 0 作为字数占位，稍后异步估算并回填 word_count
+    book_id = new_book_id(normalized_type, 0)
     for _ in range(5):
         if not db.get(Book, book_id):
             break
-        book_id = new_book_id(normalized_type, word_count)
+        book_id = new_book_id(normalized_type, 0)
     book_dir = ensure_book_dir(book_id)
     pdf_path = os.path.join(book_dir, "source.pdf")
-    shutil.move(temp_pdf_path, pdf_path)
-    shutil.rmtree(temp_dir, ignore_errors=True)
+    with open(pdf_path, "wb") as buffer:
+        file.file.seek(0)
+        shutil.copyfileobj(file.file, buffer)
 
     # 写入数据库
     book = Book(
         id=book_id,
         user_id=user.user_id,
         book_type=normalized_type,
-        word_count=word_count,
+        word_count=0,
         filename=file.filename,
         pdf_path=pdf_path,
         status="uploaded",
@@ -123,12 +114,14 @@ async def upload_book(
     db.add(book)
     db.commit()
     record_book_upload(db, normalized_type, book_id)
+    # 异步估算字数并回填
+    celery_app.send_task("app.tasks.pipeline.estimate_book_units", args=[book_id])
 
     return UploadResponse(
         book_id=book_id,
         filename=file.filename,
         book_type=normalized_type,
-        word_count=word_count,
+        word_count=None,
     )
 
 

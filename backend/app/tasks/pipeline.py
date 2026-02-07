@@ -17,7 +17,7 @@ from app.services.llm_service import extract_with_validation, LLMConfig, resolve
 from app.services.statistics import record_llm_usage
 from app.services.prompt_strategy import build_prompt
 from app.services.md_service import load_chapter_text, parse_structure
-from app.services.pdf_service import pdf_to_markdown
+from app.services.pdf_service import pdf_to_markdown, estimate_pdf_units
 from app.utils.file_store import ensure_book_dir, new_chapter_id, new_chunk_id
 
 
@@ -157,6 +157,22 @@ def process_book(book_id: str, llm_provider: str | None = None) -> Dict[str, Any
             process_chapter.delay(book_id, chapter.chapter_id, llm_provider)
 
         return {"book_id": book_id, "chapters": len(chapters)}
+    finally:
+        db.close()
+
+
+# Celery 任务：异步估算书籍字数并回填
+@celery_app.task
+def estimate_book_units(book_id: str) -> Dict[str, Any]:
+    db = _db_session()
+    try:
+        book = db.get(Book, book_id)
+        if not book or not book.pdf_path:
+            return {"ok": False, "error": "BOOK_NOT_FOUND"}
+        word_count = estimate_pdf_units(book.pdf_path)
+        book.word_count = word_count
+        db.commit()
+        return {"ok": True, "book_id": book_id, "word_count": word_count}
     finally:
         db.close()
 

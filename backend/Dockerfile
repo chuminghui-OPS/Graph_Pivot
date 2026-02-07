@@ -30,7 +30,6 @@ EXPOSE 8000
 
 # 6. 运行指令：生产级部署配置
 # 注意：确保 app.main:app 的路径与你的目录结构一致
-CMD ["gunicorn", "-k", "uvicorn.workers.UvicornWorker", "app.main:app", "--bind", "0.0.0.0:8000", "--workers", "2", "--chdir", "/app"]
-
+CMD ["gunicorn", "-k", "uvicorn.workers.UvicornWorker", "app.main:app", "--bind", "0.0.0.0:8000", "--workers", "2", "--timeout", "180", "--graceful-timeout", "180", "--keep-alive", "120", "--chdir", "/app"]
 
 
