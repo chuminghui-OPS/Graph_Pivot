@@ -53,7 +53,7 @@ def normalize_book_type(value: str | None) -> str:
 
 
 def get_type_code(book_type: str) -> str:
-    return BOOK_CATEGORIES.get(book_type, BOOK_CATEGORIES["other"])["code"]
+    return BOOK_CATEGORIES.get(book_type, BOOK_CATEGORIES["general"])["code"]
 
 
 def list_book_types() -> Tuple[dict[str, str], ...]:

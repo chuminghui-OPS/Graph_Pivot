@@ -1,3 +1,4 @@
+import Link from "next/link";
 import React, { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/router";
 import { ChapterList } from "../components/ChapterList";
@@ -97,6 +98,7 @@ export default function Home() {
   const [selectedAssetModel, setSelectedAssetModel] = useState<string>("");
   const [bookType, setBookType] = useState<string>("textbook");
   const [bookTypes, setBookTypes] = useState<BookType[]>(FALLBACK_BOOK_TYPES);
+  const [sidebarOpen, setSidebarOpen] = useState(true);
 
   useEffect(() => {
     let mounted = true;
@@ -129,6 +131,21 @@ export default function Home() {
       data.subscription.unsubscribe();
     };
   }, [router]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const hydrateSidebar = () => {
+      setSidebarOpen(window.innerWidth >= 1024);
+    };
+    hydrateSidebar();
+    const onResize = () => {
+      if (window.innerWidth >= 1024) {
+        setSidebarOpen(true);
+      }
+    };
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
 
   useEffect(() => {
     const loadBookTypes = async () => {
@@ -425,183 +442,262 @@ export default function Home() {
   }
 
   return (
-    <div className="page">
-      <header className="hero">
-        <div>
-          <div className="title">Graph Pivot</div>
-          <div className="subtitle">
-            Upload a PDF, extract chapter knowledge graphs, and explore evidence.
-          </div>
-          <div className="llm-row">
-            <span className="llm-label">LLM:</span>
-            <div className="llm-toggle">
-              <button
-                className={selectedLlm === "qwen" ? "active" : ""}
-                onClick={() => setSelectedLlm("qwen")}
-              >
-                通义千问
-              </button>
-              <button
-                className={selectedLlm === "gemini" ? "active" : ""}
-                onClick={() => setSelectedLlm("gemini")}
-              >
-                Gemini
-              </button>
-            </div>
-            {llmInfo ? (
-              <span className="llm-meta">
-                当前：{llmInfo.provider} ({llmInfo.model})
-              </span>
-            ) : null}
-          </div>
-          <div className="llm-row">
-            <span className="llm-label">使用资产:</span>
-            <label className="llm-meta">
-              <input
-                type="checkbox"
-                checked={useAsset}
-                onChange={(event) => setUseAsset(event.target.checked)}
-              />
-              启用
-            </label>
-            {useAsset ? (
-              <>
-                <select
-                  value={selectedAssetId || ""}
-                  onChange={(event) => {
-                    const id = event.target.value;
-                    setSelectedAssetId(id);
-                    const asset = assets.find((item) => item.id === id);
-                    setSelectedAssetModel(asset?.models?.[0] || "");
-                  }}
-                >
-                  {assets.length === 0 ? (
-                    <option value="">无可用资产</option>
-                  ) : (
-                    assets.map((asset) => (
-                      <option key={asset.id} value={asset.id}>
-                        {asset.name} ({asset.provider})
-                      </option>
-                    ))
-                  )}
-                </select>
-                <input
-                  type="text"
-                  placeholder="模型名称"
-                  value={selectedAssetModel}
-                  onChange={(event) => setSelectedAssetModel(event.target.value)}
-                  style={{ minWidth: 160 }}
-                />
-              </>
-            ) : null}
+    <div className="app-shell">
+      <header className="topbar">
+        <div className="brand">
+          <div className="brand-logo">GP</div>
+          <div className="brand-meta">
+            <div className="brand-name">Graph Pivot</div>
+            <div className="brand-desc">知识图谱阅读器</div>
           </div>
         </div>
-          <div className="upload-card">
-          <div className="upload-title">Upload PDF</div>
-          <div className="upload-title" style={{ marginTop: 12 }}>
-            书籍类型
-          </div>
-          <select
-            value={bookType}
-            onChange={(event) => setBookType(event.target.value)}
-            style={{ marginBottom: 8 }}
+        <nav className="top-nav">
+          <Link href="/" className={`nav-link ${router.pathname === "/" ? "active" : ""}`}>
+            知识图谱
+          </Link>
+          <Link href="/public" className="nav-link">
+            公共书库
+          </Link>
+          <Link href="/account" className="nav-link">
+            个人中心
+          </Link>
+        </nav>
+        <div className="topbar-actions">
+          <button
+            className="icon-button"
+            type="button"
+            onClick={() => setSidebarOpen((open) => !open)}
+            aria-label="toggle chapter sidebar"
           >
-            {bookTypes.map((item) => (
-              <option key={item.key} value={item.key}>
-                {item.label}
-              </option>
-            ))}
-          </select>
-          <input
-            type="file"
-            accept="application/pdf"
-            onChange={handleUpload}
-            disabled={uploading}
-          />
-          <div className="account-link">
-            <button
-              className="load-btn"
-              onClick={() => router.push("/account")}
-              type="button"
-            >
-              个人中心
-            </button>
-            <button
-              className="load-btn"
-              onClick={() => router.push("/public")}
-              type="button"
-            >
-              公开书籍
-            </button>
-          </div>
-          <div className="upload-title" style={{ marginTop: 12 }}>
-            Load Existing Book
-          </div>
-          <input
-            type="text"
-            placeholder="输入已有 book_id"
-            value={manualBookId}
-            onChange={(event) => setManualBookId(event.target.value)}
-          />
-          <button className="load-btn" onClick={handleLoadBook}>
-            加载
+            <span className="hamburger" />
           </button>
-          <div className="hint">
-            Backend: {API_BASE}
-          </div>
+          <div className="avatar-chip">U</div>
         </div>
       </header>
-      {!hasConfig ? (
-        <div className="error-banner">缺少 Supabase 配置，请检查环境变量。</div>
-      ) : null}
-      {error ? <div className="error-banner">{error}</div> : null}
-      {bookId ? (
-        <div className="progress-card">
-          <div className="progress-label">
-            {progressLabel} {bookId ? `（${bookId}）` : ""}
+
+      <div className={`page-grid ${sidebarOpen ? "" : "sidebar-collapsed"}`}>
+        <aside className={`sidebar ${sidebarOpen ? "open" : "collapsed"}`}>
+          <div className="sidebar-header">
+            <div>
+              <div className="sidebar-title">章节列表</div>
+              <div className="sidebar-subtitle">状态实时轮询</div>
+            </div>
+            <button
+              className="icon-button ghost"
+              type="button"
+              aria-label="collapse sidebar"
+              onClick={() => setSidebarOpen(false)}
+            >
+              ×
+            </button>
           </div>
-          <div className="progress-track">
-            <div
-              className="progress-fill"
-              style={{
-                width: `${progressPercent}%`,
-                transitionDuration: `${progressSpeedMs}ms`
+          <ChapterList
+            chapters={chapters}
+            activeId={activeChapterId}
+            onSelect={(id) => {
+              setActiveChapterId(id);
+              setHighlightTerm(null);
+              setEvidence(null);
+            }}
+          />
+        </aside>
+
+        <div className="content-column">
+          <section className="page-heading">
+            <div>
+              <p className="eyebrow">Knowledge Graph</p>
+              <h1 className="page-title">Graph Pivot</h1>
+              <p className="page-desc">
+                上传 PDF，生成章节级知识图谱，并在右侧阅读面板中联动高亮证据。
+              </p>
+            </div>
+            <div className="pill">Backend: {API_BASE}</div>
+          </section>
+
+          {!hasConfig ? (
+            <div className="banner banner-error">缺少 Supabase 配置，请检查环境变量。</div>
+          ) : null}
+          {error ? <div className="banner banner-error">{error}</div> : null}
+
+          <section className="control-grid">
+            <div className="panel control-card span-8">
+              <div className="panel-title spaced">
+                <div>
+                  <div className="label-strong">LLM 配置</div>
+                  {llmInfo ? (
+                    <div className="muted">
+                      当前：{llmInfo.provider}（{llmInfo.model}）
+                    </div>
+                  ) : (
+                    <div className="muted">选择推理引擎并可绑定资产</div>
+                  )}
+                </div>
+              </div>
+              <div className="control-row">
+                <span className="field-label">模型选择</span>
+                <div className="segmented">
+                  <button
+                    className={selectedLlm === "qwen" ? "active" : ""}
+                    onClick={() => setSelectedLlm("qwen")}
+                    type="button"
+                  >
+                    通义千问
+                  </button>
+                  <button
+                    className={selectedLlm === "gemini" ? "active" : ""}
+                    onClick={() => setSelectedLlm("gemini")}
+                    type="button"
+                  >
+                    Gemini
+                  </button>
+                </div>
+              </div>
+              <div className="control-row wrap">
+                <span className="field-label">使用资产</span>
+                <label className="checkbox">
+                  <input
+                    type="checkbox"
+                    checked={useAsset}
+                    onChange={(event) => setUseAsset(event.target.checked)}
+                  />
+                  启用
+                </label>
+                {useAsset ? (
+                  <>
+                    <select
+                      value={selectedAssetId || ""}
+                      onChange={(event) => {
+                        const id = event.target.value;
+                        setSelectedAssetId(id);
+                        const asset = assets.find((item) => item.id === id);
+                        setSelectedAssetModel(asset?.models?.[0] || "");
+                      }}
+                    >
+                      {assets.length === 0 ? (
+                        <option value="">无可用资产</option>
+                      ) : (
+                        assets.map((asset) => (
+                          <option key={asset.id} value={asset.id}>
+                            {asset.name} ({asset.provider})
+                          </option>
+                        ))
+                      )}
+                    </select>
+                    <input
+                      type="text"
+                      placeholder="模型名称"
+                      value={selectedAssetModel}
+                      onChange={(event) => setSelectedAssetModel(event.target.value)}
+                    />
+                  </>
+                ) : null}
+              </div>
+            </div>
+
+            <div className="panel control-card span-4">
+              <div className="panel-title spaced">
+                <div className="label-strong">书籍上传与加载</div>
+                <div className="muted">PDF 上传或直接加载已有 book_id</div>
+              </div>
+              <div className="form-grid">
+                <label className="field">
+                  <span>书籍类型</span>
+                  <select
+                    value={bookType}
+                    onChange={(event) => setBookType(event.target.value)}
+                  >
+                    {bookTypes.map((item) => (
+                      <option key={item.key} value={item.key}>
+                        {item.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="field">
+                  <span>上传 PDF</span>
+                  <input
+                    type="file"
+                    accept="application/pdf"
+                    onChange={handleUpload}
+                    disabled={uploading}
+                  />
+                </label>
+                <label className="field">
+                  <span>已有 book_id</span>
+                  <div className="input-row">
+                    <input
+                      type="text"
+                      placeholder="输入已有 book_id"
+                      value={manualBookId}
+                      onChange={(event) => setManualBookId(event.target.value)}
+                    />
+                    <button className="primary" type="button" onClick={handleLoadBook}>
+                      加载
+                    </button>
+                  </div>
+                </label>
+                <div className="input-row ghost-actions">
+                  <button
+                    className="ghost"
+                    onClick={() => router.push("/public")}
+                    type="button"
+                  >
+                    公共书库
+                  </button>
+                  <button
+                    className="ghost"
+                    onClick={() => router.push("/account")}
+                    type="button"
+                  >
+                    个人中心
+                  </button>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          {bookId ? (
+            <div className="panel status-card">
+              <div className="panel-title spaced">
+                <div className="label-strong">{progressLabel}</div>
+                <div className="muted">{bookId}</div>
+              </div>
+              <div className="progress-track">
+                <div
+                  className="progress-fill"
+                  style={{
+                    width: `${progressPercent}%`,
+                    transitionDuration: `${progressSpeedMs}ms`
+                  }}
+                />
+              </div>
+              <div className="progress-meta">
+                {doneCount}/{totalChapters || 0}
+              </div>
+            </div>
+          ) : null}
+
+          <section className="workspace">
+            <GraphView
+              graph={graph}
+              onSelectNode={(name) => {
+                setHighlightTerm(name);
+                setEvidence(null);
+              }}
+              onSelectEdge={(evidenceText) => {
+                setEvidence(evidenceText);
+                setHighlightTerm(evidenceText);
               }}
             />
-          </div>
-          <div className="progress-meta">
-            {doneCount}/{totalChapters || 0}
-          </div>
+            <ReaderPanel
+              pdfUrl={pdfUrl}
+              markdown={markdown}
+              highlightTerm={highlightTerm}
+              evidence={evidence}
+            />
+          </section>
         </div>
-      ) : null}
-      <main className="layout">
-        <ChapterList
-          chapters={chapters}
-          activeId={activeChapterId}
-          onSelect={(id) => {
-            setActiveChapterId(id);
-            setHighlightTerm(null);
-            setEvidence(null);
-          }}
-        />
-        <GraphView
-          graph={graph}
-          onSelectNode={(name) => {
-            setHighlightTerm(name);
-            setEvidence(null);
-          }}
-          onSelectEdge={(evidenceText) => {
-            setEvidence(evidenceText);
-            setHighlightTerm(evidenceText);
-          }}
-        />
-        <ReaderPanel
-          pdfUrl={pdfUrl}
-          markdown={markdown}
-          highlightTerm={highlightTerm}
-          evidence={evidence}
-        />
-      </main>
+      </div>
     </div>
   );
 }
