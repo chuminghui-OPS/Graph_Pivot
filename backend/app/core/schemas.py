@@ -38,6 +38,10 @@ class ChapterListResponse(BaseModel):
     book_id: str
     llm_provider: str
     llm_model: str
+    calls: int = 0
+    tokens_in: int = 0
+    tokens_out: int = 0
+    last_error: Optional[str] = None
     chapters: List[ChapterOut]
 
 

@@ -16,6 +16,7 @@ export function GraphView({ graph, onSelectNode, onSelectEdge }: GraphViewProps)
   const containerRef = useRef<HTMLDivElement | null>(null);
   const fgRef = useRef<any>(null);
   const [dims, setDims] = useState({ width: 300, height: 360 });
+  const [isFullscreen, setIsFullscreen] = useState(false);
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -64,8 +65,18 @@ export function GraphView({ graph, onSelectNode, onSelectEdge }: GraphViewProps)
   }, [data.nodes.length, data.links.length, dims.width, dims.height]);
 
   return (
-    <div className="panel graph-panel">
-      <div className="panel-title">Chapter Graph</div>
+    <div className={`panel graph-panel ${isFullscreen ? "fullscreen" : ""}`}>
+      <div className="panel-title">
+        <span>Chapter Graph</span>
+      </div>
+      <button
+        className="graph-fullscreen-btn"
+        type="button"
+        aria-label={isFullscreen ? "exit fullscreen" : "enter fullscreen"}
+        onClick={() => setIsFullscreen((prev) => !prev)}
+      >
+        {isFullscreen ? "×" : "⤢"}
+      </button>
       <div className="graph-canvas" ref={containerRef}>
         {dims.width > 0 && dims.height > 0 ? (
           <ForceGraph2D

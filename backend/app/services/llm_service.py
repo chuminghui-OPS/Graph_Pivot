@@ -51,6 +51,39 @@ def _strip_json_fence(content: str) -> str:
         return text[start : end + 1]
     return text
 
+
+def _extract_error_message(payload: str) -> str:
+    try:
+        data = json.loads(payload)
+    except Exception:
+        return payload.strip()[:300]
+    if isinstance(data, dict):
+        err = data.get("error")
+        if isinstance(err, dict):
+            msg = err.get("message") or err.get("detail") or err.get("error")
+            if msg:
+                return str(msg)
+        msg = data.get("message") or data.get("detail") or data.get("error")
+        if msg:
+            return str(msg)
+    return payload.strip()[:300]
+
+
+def _format_llm_error(exc: Exception) -> str:
+    if isinstance(exc, httpx.HTTPStatusError):
+        status = exc.response.status_code
+        body = exc.response.text or ""
+        message = _extract_error_message(body) if body else str(exc)
+        lowered = message.lower()
+        if status in (401, 403):
+            return "模型密钥无效或权限不足"
+        if status in (402, 429) or "insufficient" in lowered or "quota" in lowered or "balance" in lowered:
+            return "模型余额不足或调用额度不足"
+        return f"模型服务调用失败（{status}）: {message}"
+    if isinstance(exc, httpx.HTTPError):
+        return "模型服务调用失败，请检查网络或服务状态"
+    return str(exc)[:300]
+
 # 获取当前 LLM 提供方信息（供前端展示）
 def get_llm_info(provider_override: str | None = None) -> Dict[str, str]:
     provider = (provider_override or settings.llm_provider).lower()
@@ -168,6 +201,7 @@ def extract_with_validation(
     book_type: str | None = None,
 ) -> Dict[str, Any]:
     last_error: str | None = None
+    last_error_code: str | None = None
     for _ in range(max_retries + 1):
         try:
             result = _call_llm(text, provider_override, config_override, book_type)
@@ -177,13 +211,18 @@ def extract_with_validation(
             result["entities"] = result.get("entities", [])[:10]
             result["relations"] = result.get("relations", [])[:12]
             return result
-        except (json.JSONDecodeError, ValidationError, httpx.HTTPError) as exc:
+        except httpx.HTTPError as exc:
             # 记录错误并继续重试
+            last_error_code = "LLM_HTTP_ERROR"
+            last_error = _format_llm_error(exc)
+            continue
+        except (json.JSONDecodeError, ValidationError) as exc:
+            last_error_code = "LLM_VALIDATION_FAILED"
             last_error = str(exc)
             continue
 
     return {
-        "error": "LLM_VALIDATION_FAILED",
+        "error": last_error_code or "LLM_VALIDATION_FAILED",
         "details": last_error or "Unknown error",
         "entities": [],
         "relations": [],

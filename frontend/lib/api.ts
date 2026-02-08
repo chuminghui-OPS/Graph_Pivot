@@ -45,6 +45,10 @@ export interface ChapterListResponse {
   book_id: string;
   llm_provider: string;
   llm_model: string;
+  calls?: number;
+  tokens_in?: number;
+  tokens_out?: number;
+  last_error?: string | null;
   chapters: Chapter[];
 }
 

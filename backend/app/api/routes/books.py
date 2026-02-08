@@ -26,7 +26,7 @@ from app.core.schemas import (
 )
 from app.core.celery_app import celery_app
 from app.core.auth import UserContext, get_current_user
-from app.models import Book, Chapter, ChapterGraph, ApiAsset, PublicBook, LLMUsageEvent, UserSettings
+from app.models import Book, Chapter, ChapterGraph, ApiAsset, PublicBook, LLMUsageEvent
 from app.services.llm_service import get_llm_info
 from app.services.md_service import load_chapter_text
 from app.services.statistics import record_book_upload
@@ -140,30 +140,31 @@ def process_book(
         raise HTTPException(status_code=404, detail="Book not found.")
 
     provider = llm.lower()
-    if provider not in {"gemini", "qwen", "custom"}:
-        raise HTTPException(status_code=400, detail="Invalid llm provider.")
-
-    # Chatbox-like default: llm=custom + no asset_id uses /api/settings default.
-    if provider == "custom" and not asset_id:
-        settings_row = db.get(UserSettings, user.user_id)
-        if settings_row and settings_row.default_asset_id:
-            asset_id = settings_row.default_asset_id
-            asset_model = settings_row.default_model
-        else:
-            raise HTTPException(status_code=400, detail="No default asset configured.")
+    if provider != "custom":
+        raise HTTPException(status_code=400, detail="Only custom assets are supported.")
+    if not asset_id:
+        raise HTTPException(status_code=400, detail="Asset id is required.")
 
     if asset_id:
         asset = db.get(ApiAsset, asset_id)
         if not asset or asset.user_id != user.user_id:
             raise HTTPException(status_code=404, detail="Asset not found.")
+        if not asset.models:
+            raise HTTPException(status_code=400, detail="Asset has no models configured.")
+        if not asset_model:
+            raise HTTPException(status_code=400, detail="Asset model is required.")
+        if asset_model not in asset.models:
+            raise HTTPException(status_code=400, detail="Asset model not in configured list.")
         book.llm_asset_id = asset_id
-        book.llm_model = asset_model or (asset.models[0] if asset.models else None)
+        book.llm_model = asset_model
         provider = "custom"
     else:
         book.llm_asset_id = None
         book.llm_model = None
 
     BOOK_LLM_PROVIDER[book_id] = provider
+    book.processing_started_at = datetime.utcnow()
+    book.last_error = None
     book.last_seen_at = datetime.utcnow()
     db.commit()
     # 通过 Celery 派发任务
@@ -232,10 +233,32 @@ def list_chapters(
                 "model": book.llm_model or (asset.models[0] if asset.models else ""),
             }
 
+    usage_since = book.processing_started_at or book.created_at
+    usage_row = (
+        db.query(
+            func.count(LLMUsageEvent.id),
+            func.coalesce(func.sum(LLMUsageEvent.tokens_in), 0),
+            func.coalesce(func.sum(LLMUsageEvent.tokens_out), 0),
+        )
+        .filter(
+            LLMUsageEvent.book_id == book_id,
+            LLMUsageEvent.user_id == user.user_id,
+            LLMUsageEvent.created_at >= usage_since,
+        )
+        .first()
+    )
+    calls = int(usage_row[0] or 0) if usage_row else 0
+    tokens_in = int(usage_row[1] or 0) if usage_row else 0
+    tokens_out = int(usage_row[2] or 0) if usage_row else 0
+
     return ChapterListResponse(
         book_id=book_id,
         llm_provider=llm_info["provider"],
         llm_model=llm_info["model"],
+        calls=calls,
+        tokens_in=tokens_in,
+        tokens_out=tokens_out,
+        last_error=book.last_error,
         chapters=[
             {"chapter_id": chapter.chapter_id, "title": chapter.title, "status": chapter.status}
             for chapter in chapters

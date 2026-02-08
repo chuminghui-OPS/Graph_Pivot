@@ -74,6 +74,12 @@ def init_db() -> None:
                 _ensure_column("books", "llm_asset_id", "ALTER TABLE books ADD COLUMN llm_asset_id VARCHAR")
                 _ensure_column("books", "llm_model", "ALTER TABLE books ADD COLUMN llm_model VARCHAR")
                 _ensure_column(
+                    "books",
+                    "processing_started_at",
+                    "ALTER TABLE books ADD COLUMN processing_started_at TIMESTAMP",
+                )
+                _ensure_column("books", "last_error", "ALTER TABLE books ADD COLUMN last_error TEXT")
+                _ensure_column(
                     "chapters",
                     "processing_started_at",
                     "ALTER TABLE chapters ADD COLUMN processing_started_at TIMESTAMP",
@@ -104,6 +110,10 @@ def init_db() -> None:
             conn.execute(text("ALTER TABLE books ADD COLUMN llm_asset_id VARCHAR"))
         if "llm_model" not in book_columns:
             conn.execute(text("ALTER TABLE books ADD COLUMN llm_model VARCHAR"))
+        if "processing_started_at" not in book_columns:
+            conn.execute(text("ALTER TABLE books ADD COLUMN processing_started_at DATETIME"))
+        if "last_error" not in book_columns:
+            conn.execute(text("ALTER TABLE books ADD COLUMN last_error TEXT"))
 
 
 # FastAPI 依赖：获取数据库会话

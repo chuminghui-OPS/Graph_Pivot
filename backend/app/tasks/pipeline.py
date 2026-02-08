@@ -343,6 +343,9 @@ def extract_chunk(
             chunk.status = "failed"
             chunk.error = result.get("details") or result.get("error")
             chunk.result_json = result
+            if book and chunk.error:
+                if not book.last_error:
+                    book.last_error = chunk.error
             db.commit()
             return {"ok": False, "chunk_id": chunk_id, "error": chunk.error, "result": result}
 

@@ -81,6 +81,12 @@ export default function Home() {
   const [evidence, setEvidence] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [runError, setRunError] = useState<string | null>(null);
+  const [usageSummary, setUsageSummary] = useState<{
+    calls: number;
+    tokensIn: number;
+    tokensOut: number;
+  } | null>(null);
   const [llmInfo, setLlmInfo] = useState<{ provider: string; model: string } | null>(null);
   const [manualBookId, setManualBookId] = useState("");
   const [progressPercent, setProgressPercent] = useState(0);
@@ -195,6 +201,8 @@ export default function Home() {
         URL.revokeObjectURL(pdfUrl);
       }
       setPdfUrl(null);
+      setRunError(null);
+      setUsageSummary(null);
       return;
     }
     let cancelled = false;
@@ -230,6 +238,12 @@ export default function Home() {
         const data = await fetchChapters(currentBookId);
         setChapters(data.chapters);
         setLlmInfo({ provider: data.llm_provider, model: data.llm_model });
+        setUsageSummary({
+          calls: data.calls ?? 0,
+          tokensIn: data.tokens_in ?? 0,
+          tokensOut: data.tokens_out ?? 0
+        });
+        setRunError(data.last_error || null);
         if (!activeChapterId && data.chapters.length > 0) {
           setActiveChapterId(data.chapters[0].chapter_id);
         }
@@ -546,6 +560,9 @@ export default function Home() {
             <div className="banner banner-error">缺少 Supabase 配置，请检查环境变量。</div>
           ) : null}
           {error ? <div className="banner banner-error">{error}</div> : null}
+          {runError ? (
+            <div className="banner banner-error">模型调用失败：{runError}</div>
+          ) : null}
 
           <section className="control-grid">
             <div className="panel control-card span-8">
@@ -684,6 +701,13 @@ export default function Home() {
               <div className="progress-meta">
                 {doneCount}/{totalChapters || 0}
               </div>
+              {usageSummary ? (
+                <div className="progress-meta secondary">
+                  Tokens: {usageSummary.tokensIn + usageSummary.tokensOut}（in{" "}
+                  {usageSummary.tokensIn} / out {usageSummary.tokensOut}） · Calls{" "}
+                  {usageSummary.calls}
+                </div>
+              ) : null}
             </div>
           ) : null}
 
