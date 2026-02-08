@@ -212,6 +212,7 @@ export default function Home() {
   const hasFailures = chapters.some((chapter) =>
     ["FAILED", "SKIPPED_TOO_LARGE", "TIMEOUT"].includes(chapter.status)
   );
+  const shouldSpin = Boolean(bookId) && (totalChapters === 0 || !!processingChapter);
   const selectedAsset = assets.find((item) => item.id === selectedAssetId) || null;
   const assetModels = selectedAsset?.models || [];
 
@@ -772,8 +773,11 @@ export default function Home() {
             <div className="panel status-card">
               <div className="panel-title spaced">
                 <div className="status-title">
-                  <span className="progress-spinner" aria-hidden="true" />
-                  <span className="label-strong">{progressLabel}</span>
+                  <span
+                    className={`progress-spinner ${shouldSpin ? "spinning" : "paused"}`}
+                    aria-hidden="true"
+                  />
+                  <span className="label-strong">{Math.round(progressPercent)}%</span>
                 </div>
                 <div className="muted">{bookId}</div>
               </div>
@@ -788,7 +792,7 @@ export default function Home() {
               </div>
               <div className="progress-meta">
                 <span>{doneCount}/{totalChapters || 0}</span>
-                <span>{Math.round(progressPercent)}%</span>
+                <span className="progress-label">{progressLabel}</span>
               </div>
               {usageSummary ? (
                 <div className="progress-meta secondary">

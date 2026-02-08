@@ -636,7 +636,19 @@ body {
   border: 2px solid rgba(15, 118, 110, 0.2);
   border-top-color: var(--accent);
   display: inline-block;
+}
+
+.progress-spinner.spinning {
   animation: spin 0.9s linear infinite;
+}
+
+.progress-spinner.paused {
+  border-top-color: rgba(15, 118, 110, 0.2);
+}
+
+.progress-label {
+  color: var(--ink);
+  font-weight: 600;
 }
 
 @keyframes spin {

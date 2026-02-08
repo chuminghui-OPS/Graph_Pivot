@@ -15,6 +15,7 @@ LLM_OUTPUT_SCHEMA = {
                     "name": {"type": "string"},
                     "type": {"type": "string"},
                     "count": {"type": "integer", "minimum": 1},
+                    "properties": {"type": "object", "additionalProperties": True},
                 },
                 "additionalProperties": False,
             },

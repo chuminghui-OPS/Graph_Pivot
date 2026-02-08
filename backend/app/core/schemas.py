@@ -74,6 +74,7 @@ class LLMEntity(BaseModel):
     name: str
     type: str
     count: int = 1
+    properties: Optional[dict] = None
 
 
 class LLMRelation(BaseModel):
