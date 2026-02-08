@@ -82,7 +82,6 @@ export default function Home() {
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [llmInfo, setLlmInfo] = useState<{ provider: string; model: string } | null>(null);
-  const [selectedLlm, setSelectedLlm] = useState<"qwen" | "gemini">("qwen");
   const [manualBookId, setManualBookId] = useState("");
   const [progressPercent, setProgressPercent] = useState(0);
   const [progressSpeedMs, setProgressSpeedMs] = useState(300);
@@ -93,7 +92,6 @@ export default function Home() {
   const [authReady, setAuthReady] = useState(false);
   const hasConfig = hasSupabaseConfig();
   const [assets, setAssets] = useState<ApiAsset[]>([]);
-  const [useAsset, setUseAsset] = useState(false);
   const [selectedAssetId, setSelectedAssetId] = useState<string | null>(null);
   const [selectedAssetModel, setSelectedAssetModel] = useState<string>("");
   const [bookType, setBookType] = useState<string>("textbook");
@@ -177,6 +175,8 @@ export default function Home() {
   const hasFailures = chapters.some((chapter) =>
     ["FAILED", "SKIPPED_TOO_LARGE", "TIMEOUT"].includes(chapter.status)
   );
+  const selectedAsset = assets.find((item) => item.id === selectedAssetId) || null;
+  const assetModels = selectedAsset?.models || [];
 
   let progressLabel = "";
   if (bookId && totalChapters === 0) {
@@ -268,6 +268,24 @@ export default function Home() {
     };
     loadAssets();
   }, []);
+
+  useEffect(() => {
+    if (!selectedAssetId) {
+      if (selectedAssetModel) {
+        setSelectedAssetModel("");
+      }
+      return;
+    }
+    if (assetModels.length === 0) {
+      if (selectedAssetModel) {
+        setSelectedAssetModel("");
+      }
+      return;
+    }
+    if (!assetModels.includes(selectedAssetModel)) {
+      setSelectedAssetModel(assetModels[0]);
+    }
+  }, [selectedAssetId, assetModels.join("|"), selectedAssetModel]);
 
   useEffect(() => {
     if (!bookId) {
@@ -400,6 +418,16 @@ export default function Home() {
   const handleUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
+    if (!selectedAssetId) {
+      setError("请先在个人中心添加 API 资产，并选择模型");
+      event.target.value = "";
+      return;
+    }
+    if (!selectedAssetModel) {
+      setError("当前资产未配置可用模型，请先完善模型列表");
+      event.target.value = "";
+      return;
+    }
     setUploading(true);
     setError(null);
     try {
@@ -411,9 +439,9 @@ export default function Home() {
       setMarkdown("");
       await processBook(
         uploadResult.book_id,
-        selectedLlm,
-        useAsset ? selectedAssetId : null,
-        useAsset ? selectedAssetModel : null
+        "custom",
+        selectedAssetId,
+        selectedAssetModel
       );
     } catch (err: any) {
       setError(err.message || "Upload failed");
@@ -523,74 +551,56 @@ export default function Home() {
             <div className="panel control-card span-8">
               <div className="panel-title spaced">
                 <div>
-                  <div className="label-strong">LLM 配置</div>
+                  <div className="label-strong">模型配置</div>
                   {llmInfo ? (
                     <div className="muted">
                       当前：{llmInfo.provider}（{llmInfo.model}）
                     </div>
                   ) : (
-                    <div className="muted">选择推理引擎并可绑定资产</div>
+                    <div className="muted">从个人中心添加并选择 API 资产</div>
                   )}
                 </div>
               </div>
               <div className="control-row">
-                <span className="field-label">模型选择</span>
-                <div className="segmented">
-                  <button
-                    className={selectedLlm === "qwen" ? "active" : ""}
-                    onClick={() => setSelectedLlm("qwen")}
-                    type="button"
-                  >
-                    通义千问
-                  </button>
-                  <button
-                    className={selectedLlm === "gemini" ? "active" : ""}
-                    onClick={() => setSelectedLlm("gemini")}
-                    type="button"
-                  >
-                    Gemini
-                  </button>
-                </div>
+                <span className="field-label">API 资产</span>
+                <select
+                  value={selectedAssetId || ""}
+                  onChange={(event) => {
+                    const id = event.target.value;
+                    setSelectedAssetId(id);
+                    const asset = assets.find((item) => item.id === id);
+                    setSelectedAssetModel(asset?.models?.[0] || "");
+                  }}
+                  disabled={assets.length === 0}
+                >
+                  {assets.length === 0 ? (
+                    <option value="">请先在个人中心添加资产</option>
+                  ) : (
+                    assets.map((asset) => (
+                      <option key={asset.id} value={asset.id}>
+                        {asset.name} ({asset.provider})
+                      </option>
+                    ))
+                  )}
+                </select>
               </div>
-              <div className="control-row wrap">
-                <span className="field-label">使用资产</span>
-                <label className="checkbox">
-                  <input
-                    type="checkbox"
-                    checked={useAsset}
-                    onChange={(event) => setUseAsset(event.target.checked)}
-                  />
-                  启用
-                </label>
-                {useAsset ? (
-                  <>
-                    <select
-                      value={selectedAssetId || ""}
-                      onChange={(event) => {
-                        const id = event.target.value;
-                        setSelectedAssetId(id);
-                        const asset = assets.find((item) => item.id === id);
-                        setSelectedAssetModel(asset?.models?.[0] || "");
-                      }}
-                    >
-                      {assets.length === 0 ? (
-                        <option value="">无可用资产</option>
-                      ) : (
-                        assets.map((asset) => (
-                          <option key={asset.id} value={asset.id}>
-                            {asset.name} ({asset.provider})
-                          </option>
-                        ))
-                      )}
-                    </select>
-                    <input
-                      type="text"
-                      placeholder="模型名称"
-                      value={selectedAssetModel}
-                      onChange={(event) => setSelectedAssetModel(event.target.value)}
-                    />
-                  </>
-                ) : null}
+              <div className="control-row">
+                <span className="field-label">模型</span>
+                <select
+                  value={selectedAssetModel}
+                  onChange={(event) => setSelectedAssetModel(event.target.value)}
+                  disabled={!selectedAssetId || assetModels.length === 0}
+                >
+                  {assetModels.length === 0 ? (
+                    <option value="">该资产暂无模型</option>
+                  ) : (
+                    assetModels.map((model) => (
+                      <option key={model} value={model}>
+                        {model}
+                      </option>
+                    ))
+                  )}
+                </select>
               </div>
             </div>
 

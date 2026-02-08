@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/router";
 import dynamic from "next/dynamic";
 import {
@@ -279,191 +280,222 @@ function AccountPage() {
   };
 
   return (
-    <div className="account-page">
-      <aside className="account-nav">
-        <div className="nav-brand">Graph Pivot</div>
-        <nav>
-          <button className="nav-item active">个人中心</button>
-          <button className="nav-item" onClick={() => router.push("/")}>
+    <div className="app-shell">
+      <header className="topbar">
+        <div className="brand">
+          <div className="brand-logo">GP</div>
+          <div className="brand-meta">
+            <div className="brand-name">Graph Pivot</div>
+            <div className="brand-desc">知识图谱阅读器</div>
+          </div>
+        </div>
+        <nav className="top-nav">
+          <Link href="/" className="nav-link">
             知识图谱
-          </button>
-        </nav>
-        <div className="nav-spacer" />
-        <button className="nav-item" onClick={handleSignOut}>
-          退出登录
-        </button>
-      </aside>
-
-      <main className="account-main">
-        <header className="account-header">
-          <div>
-            <div className="account-title">个人用户中心</div>
-            <div className="account-subtitle">管理账户信息、API 资产与书籍</div>
-          </div>
-          <button
-            className="primary"
-            onClick={() => {
-              setCreateForm({ name: "", provider: "OpenAI", api_mode: "openai_compatible" });
-              setShowModal(true);
-            }}
+          </Link>
+          <Link href="/public" className="nav-link">
+            公共书库
+          </Link>
+          <Link
+            href="/account"
+            className={`nav-link ${router.pathname === "/account" ? "active" : ""}`}
           >
-            添加模型提供方
+            个人中心
+          </Link>
+        </nav>
+        <div className="topbar-actions">
+          <div className="avatar-chip">
+            {profile?.full_name?.[0] || profile?.email?.[0] || "U"}
+          </div>
+        </div>
+      </header>
+
+      <div className="account-page">
+        <aside className="account-nav">
+          <div className="nav-brand">Graph Pivot</div>
+          <nav>
+            <button className="nav-item active">个人中心</button>
+            <button className="nav-item" onClick={() => router.push("/")}>
+              知识图谱
+            </button>
+          </nav>
+          <div className="nav-spacer" />
+          <button className="nav-item" onClick={handleSignOut}>
+            退出登录
           </button>
-        </header>
+        </aside>
 
-        {message ? <div className="notice">{message}</div> : null}
-        {!hasConfig ? (
-          <div className="notice">缺少 Supabase 配置，请检查环境变量。</div>
-        ) : null}
+        <main className="account-main">
+          <header className="account-header">
+            <div>
+              <div className="account-title">个人用户中心</div>
+              <div className="account-subtitle">管理账户信息、API 资产与书籍</div>
+            </div>
+            <button
+              className="primary"
+              onClick={() => {
+                setCreateForm({ name: "", provider: "OpenAI", api_mode: "openai_compatible" });
+                setShowModal(true);
+              }}
+            >
+              添加模型提供方
+            </button>
+          </header>
 
-        <section className="profile-card">
-          <div className="profile-main">
-            <div className="avatar">
-              {profile?.full_name?.[0] || profile?.email?.[0] || "U"}
-            </div>
-            <div>
-              <div className="profile-name">{profile?.full_name || "未设置昵称"}</div>
-              <div className="profile-email">{profile?.email || "-"}</div>
-            </div>
-          </div>
-          <div className="profile-meta">
-            <div>
-              <div className="meta-label">套餐</div>
-              <div className="meta-value">{profile?.plan || "Free"}</div>
-            </div>
-            <div>
-              <div className="meta-label">处理书籍数</div>
-              <div className="meta-value">{profile?.total_books || 0}</div>
-            </div>
-          </div>
-        </section>
+          {message ? <div className="notice">{message}</div> : null}
+          {!hasConfig ? (
+            <div className="notice">缺少 Supabase 配置，请检查环境变量。</div>
+          ) : null}
 
-        <section className="asset-panel">
-          <div className="asset-list">
-            {assets.length === 0 ? (
-              <div className="empty">暂无厂商配置</div>
-            ) : (
-              assets.map((asset) => (
-                <button
-                  key={asset.id}
-                  className={asset.id === activeAssetId ? "asset-item active" : "asset-item"}
-                  onClick={() => setActiveAssetId(asset.id)}
-                >
-                  <div className="asset-name">{asset.name}</div>
-                  <div className="asset-provider">{asset.provider}</div>
-                </button>
+          <section className="profile-card">
+            <div className="profile-main">
+              <div className="avatar">
+                {profile?.full_name?.[0] || profile?.email?.[0] || "U"}
+              </div>
+              <div>
+                <div className="profile-name">{profile?.full_name || "未设置昵称"}</div>
+                <div className="profile-email">{profile?.email || "-"}</div>
+              </div>
+            </div>
+            <div className="profile-meta">
+              <div>
+                <div className="meta-label">套餐</div>
+                <div className="meta-value">{profile?.plan || "Free"}</div>
+              </div>
+              <div>
+                <div className="meta-label">处理书籍数</div>
+                <div className="meta-value">{profile?.total_books || 0}</div>
+              </div>
+            </div>
+          </section>
+
+          <section className="asset-panel">
+            <div className="asset-list">
+              {assets.length === 0 ? (
+                <div className="empty">暂无厂商配置</div>
+              ) : (
+                assets.map((asset) => (
+                  <button
+                    key={asset.id}
+                    className={asset.id === activeAssetId ? "asset-item active" : "asset-item"}
+                    onClick={() => setActiveAssetId(asset.id)}
+                  >
+                    <div className="asset-name">{asset.name}</div>
+                    <div className="asset-provider">{asset.provider}</div>
+                  </button>
+                ))
+              )}
+            </div>
+            <div className="asset-detail">
+              {activeAsset ? (
+                <>
+                  <div className="detail-row">
+                    <label>名称</label>
+                    <input
+                      value={form.name}
+                      onChange={(e) => setForm({ ...form, name: e.target.value })}
+                    />
+                  </div>
+                  <div className="detail-row">
+                    <label>API 模式</label>
+                    <select
+                      value={form.api_mode}
+                      onChange={(e) => setForm({ ...form, api_mode: e.target.value })}
+                    >
+                      <option value="openai_compatible">OpenAI API 兼容</option>
+                      <option value="native">原生</option>
+                    </select>
+                  </div>
+                  <div className="detail-row">
+                    <label>API 密钥</label>
+                    <input
+                      value={form.api_key}
+                      onChange={(e) => setForm({ ...form, api_key: e.target.value })}
+                    />
+                    <div className="hint">
+                      已保存：{activeAsset.api_key_masked || "-"}（留空不修改）
+                    </div>
+                  </div>
+                  <div className="detail-grid">
+                    <div className="detail-row">
+                      <label>API 主机</label>
+                      <input
+                        value={form.base_url}
+                        onChange={(e) => setForm({ ...form, base_url: e.target.value })}
+                      />
+                    </div>
+                    <div className="detail-row">
+                      <label>API 路径</label>
+                      <input
+                        value={form.api_path}
+                        onChange={(e) => setForm({ ...form, api_path: e.target.value })}
+                      />
+                    </div>
+                  </div>
+                  <div className="detail-row">
+                    <label>模型</label>
+                    <div className="model-toolbar">
+                      <input
+                        placeholder="输入模型名称，例如 qwen-long-latest"
+                        value={newModelName}
+                        onChange={(e) => setNewModelName(e.target.value)}
+                      />
+                      <button className="ghost" type="button" onClick={handleAddModel}>
+                        + 新建
+                      </button>
+                      <button className="ghost" type="button" onClick={handleFetchModels}>
+                        获取模型
+                      </button>
+                    </div>
+                    <textarea
+                      rows={3}
+                      value={form.models}
+                      onChange={(e) => setForm({ ...form, models: e.target.value })}
+                    />
+                    <div className="hint">逗号分隔；也可用上面的「新建 / 获取模型」</div>
+                  </div>
+                  <div className="detail-actions">
+                    <button className="ghost" onClick={handleDelete}>
+                      删除
+                    </button>
+                    <button className="primary" onClick={handleSave}>
+                      保存
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <div className="empty">选择左侧厂商查看详情</div>
+              )}
+            </div>
+          </section>
+
+          <section className="books-panel">
+            <div className="panel-title">我的书籍 / 知识库</div>
+            <div className="book-grid">
+              {books.length === 0 ? (
+                <div className="empty">暂无书籍</div>
+              ) : (
+                books.map((book) => (
+                  <div key={book.book_id} className="book-card">
+                    <div className="book-cover">{book.title?.slice(0, 2) || "书"}</div>
+                    <div className="book-info">
+                    <div className="book-title">{book.title}</div>
+                    <div className="book-id">{book.book_id}</div>
+                    <div className="book-date">{book.created_at || "-"}</div>
+                    <div className="book-date">
+                      Tokens:{" "}
+                      {(usageByBook[book.book_id]?.tokens_in || 0) +
+                        (usageByBook[book.book_id]?.tokens_out || 0)}{" "}
+                      (calls {usageByBook[book.book_id]?.calls || 0})
+                    </div>
+                  </div>
+                </div>
               ))
             )}
-          </div>
-          <div className="asset-detail">
-            {activeAsset ? (
-              <>
-                <div className="detail-row">
-                  <label>名称</label>
-                  <input
-                    value={form.name}
-                    onChange={(e) => setForm({ ...form, name: e.target.value })}
-                  />
-                </div>
-                <div className="detail-row">
-                  <label>API 模式</label>
-                  <select
-                    value={form.api_mode}
-                    onChange={(e) => setForm({ ...form, api_mode: e.target.value })}
-                  >
-                    <option value="openai_compatible">OpenAI API 兼容</option>
-                    <option value="native">原生</option>
-                  </select>
-                </div>
-                <div className="detail-row">
-                  <label>API 密钥</label>
-                  <input
-                    value={form.api_key}
-                    onChange={(e) => setForm({ ...form, api_key: e.target.value })}
-                  />
-                  <div className="hint">
-                    已保存：{activeAsset.api_key_masked || "-"}（留空不修改）
-                  </div>
-                </div>
-                <div className="detail-grid">
-                  <div className="detail-row">
-                    <label>API 主机</label>
-                    <input
-                      value={form.base_url}
-                      onChange={(e) => setForm({ ...form, base_url: e.target.value })}
-                    />
-                  </div>
-                  <div className="detail-row">
-                    <label>API 路径</label>
-                    <input
-                      value={form.api_path}
-                      onChange={(e) => setForm({ ...form, api_path: e.target.value })}
-                    />
-                  </div>
-                </div>
-                <div className="detail-row">
-                  <label>模型</label>
-                  <div className="model-toolbar">
-                    <input
-                      placeholder="输入模型名称，例如 qwen-long-latest"
-                      value={newModelName}
-                      onChange={(e) => setNewModelName(e.target.value)}
-                    />
-                    <button className="ghost" type="button" onClick={handleAddModel}>
-                      + 新建
-                    </button>
-                    <button className="ghost" type="button" onClick={handleFetchModels}>
-                      获取模型
-                    </button>
-                  </div>
-                  <textarea
-                    rows={3}
-                    value={form.models}
-                    onChange={(e) => setForm({ ...form, models: e.target.value })}
-                  />
-                  <div className="hint">逗号分隔；也可用上面的「新建 / 获取模型」</div>
-                </div>
-                <div className="detail-actions">
-                  <button className="ghost" onClick={handleDelete}>
-                    删除
-                  </button>
-                  <button className="primary" onClick={handleSave}>
-                    保存
-                  </button>
-                </div>
-              </>
-            ) : (
-              <div className="empty">选择左侧厂商查看详情</div>
-            )}
-          </div>
-        </section>
-
-        <section className="books-panel">
-          <div className="panel-title">我的书籍 / 知识库</div>
-          <div className="book-grid">
-            {books.length === 0 ? (
-              <div className="empty">暂无书籍</div>
-            ) : (
-              books.map((book) => (
-                <div key={book.book_id} className="book-card">
-                  <div className="book-cover">{book.title?.slice(0, 2) || "书"}</div>
-                  <div className="book-info">
-                  <div className="book-title">{book.title}</div>
-                  <div className="book-id">{book.book_id}</div>
-                  <div className="book-date">{book.created_at || "-"}</div>
-                  <div className="book-date">
-                    Tokens:{" "}
-                    {(usageByBook[book.book_id]?.tokens_in || 0) +
-                      (usageByBook[book.book_id]?.tokens_out || 0)}{" "}
-                    (calls {usageByBook[book.book_id]?.calls || 0})
-                  </div>
-                </div>
-              </div>
-            ))
-          )}
-          </div>
-        </section>
-      </main>
+            </div>
+          </section>
+        </main>
+      </div>
 
       {showModal ? (
         <div className="modal-backdrop">

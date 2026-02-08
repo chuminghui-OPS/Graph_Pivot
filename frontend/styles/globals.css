@@ -370,6 +370,24 @@ body {
 .control-row select,
 .control-row input[type="text"] {
   min-width: 150px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 8px 10px;
+  font-size: 14px;
+  background: #fff;
+  transition: border-color 0.3s ease, box-shadow 0.3s ease;
+}
+
+.control-row select:focus,
+.control-row input[type="text"]:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(15, 118, 110, 0.12);
+}
+
+.control-row select:disabled {
+  background: #f3f4f6;
+  color: var(--muted);
 }
 
 .form-grid {
@@ -434,13 +452,11 @@ body {
 }
 
 .page {
-  padding: 32px 32px 48px;
-  min-height: 100vh;
-  height: 130vh;
+  padding: var(--page-pad);
+  min-height: calc(100vh - var(--topbar-h));
   display: flex;
   flex-direction: column;
-  gap: 24px;
-  overflow: hidden;
+  gap: var(--gutter);
 }
 
 .hero {
@@ -449,8 +465,8 @@ body {
   align-items: center;
   gap: 24px;
   padding: 24px 28px;
-  background: linear-gradient(135deg, rgba(47, 111, 109, 0.18), rgba(201, 120, 44, 0.12));
-  border-radius: 24px;
+  background: linear-gradient(135deg, rgba(15, 118, 110, 0.14), rgba(14, 165, 233, 0.12));
+  border-radius: var(--radius-lg);
   box-shadow: var(--shadow);
 }
 
@@ -509,7 +525,7 @@ body {
 .upload-card {
   background: var(--panel);
   padding: 16px;
-  border-radius: 16px;
+  border-radius: var(--radius-lg);
   border: 1px solid var(--border);
   min-width: 240px;
   display: flex;
@@ -537,6 +553,11 @@ body {
   padding: 6px 12px;
   font-size: 12px;
   cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+.load-btn:hover {
+  background: #0c8b82;
 }
 
 .hint {
