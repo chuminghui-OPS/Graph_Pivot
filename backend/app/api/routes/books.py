@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import shutil
+from urllib.parse import quote
 from datetime import datetime, timedelta
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, Query, Form
@@ -334,7 +335,20 @@ def get_book_pdf(
     book = db.get(Book, book_id)
     if not book or book.user_id != user.user_id:
         raise HTTPException(status_code=404, detail="Book not found.")
-    headers = {"Content-Disposition": f'inline; filename="{book.filename}"'}
+    if not book.pdf_path or not os.path.exists(book.pdf_path):
+        raise HTTPException(status_code=404, detail="PDF not found.")
+    filename = book.filename or f"{book_id}.pdf"
+    ascii_fallback = filename
+    try:
+        filename.encode("ascii")
+    except UnicodeEncodeError:
+        ascii_fallback = f"{book_id}.pdf"
+    encoded = quote(filename)
+    headers = {
+        "Content-Disposition": (
+            f'inline; filename="{ascii_fallback}"; filename*=UTF-8\'\'{encoded}'
+        )
+    }
     return FileResponse(book.pdf_path, media_type="application/pdf", headers=headers)
 
 

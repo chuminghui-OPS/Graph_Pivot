@@ -40,6 +40,10 @@ const TERMINAL_STATUSES = new Set([
   "TIMEOUT",
   "PAUSED"
 ]);
+const HEARTBEAT_INTERVAL_MS = 60_000;
+const HEARTBEAT_IDLE_TIMEOUT_MS = 5 * 60_000;
+const POLL_INTERVAL_PROCESSING_MS = 10_000;
+const POLL_INTERVAL_PENDING_MS = 20_000;
 
 const FALLBACK_BOOK_TYPES: BookType[] = [
   { key: "textbook", code: "B", label: "专业教材/大学教科书" },
@@ -102,6 +106,8 @@ export default function Home() {
   const [selectedAssetModel, setSelectedAssetModel] = useState<string>("");
   const [bookType, setBookType] = useState<string>("textbook");
   const [bookTypes, setBookTypes] = useState<BookType[]>(FALLBACK_BOOK_TYPES);
+  const lastActivityRef = useRef<number>(Date.now());
+  const heartbeatTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(true);
 
   useEffect(() => {
@@ -135,6 +141,31 @@ export default function Home() {
       data.subscription.unsubscribe();
     };
   }, [router]);
+
+  useEffect(() => {
+    const markActive = () => {
+      lastActivityRef.current = Date.now();
+    };
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") {
+        lastActivityRef.current = Date.now();
+      }
+    };
+    window.addEventListener("mousemove", markActive, { passive: true });
+    window.addEventListener("keydown", markActive);
+    window.addEventListener("scroll", markActive, { passive: true });
+    window.addEventListener("click", markActive);
+    window.addEventListener("touchstart", markActive, { passive: true });
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      window.removeEventListener("mousemove", markActive);
+      window.removeEventListener("keydown", markActive);
+      window.removeEventListener("scroll", markActive);
+      window.removeEventListener("click", markActive);
+      window.removeEventListener("touchstart", markActive);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
+  }, []);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -247,14 +278,14 @@ export default function Home() {
         if (!activeChapterId && data.chapters.length > 0) {
           setActiveChapterId(data.chapters[0].chapter_id);
         }
-        const hasPending =
-          data.chapters.length === 0 ||
-          data.chapters.some(
-            (chapter) =>
-              chapter.status === "PENDING" || chapter.status === "PROCESSING"
-          );
-        if (hasPending) {
-          timer = setTimeout(poll, 2000);
+        const hasProcessing = data.chapters.some((chapter) => chapter.status === "PROCESSING");
+        const hasPending = data.chapters.some((chapter) => chapter.status === "PENDING");
+        const hasActive = data.chapters.length === 0 || hasProcessing || hasPending;
+        if (hasActive) {
+          const interval = hasProcessing
+            ? POLL_INTERVAL_PROCESSING_MS
+            : POLL_INTERVAL_PENDING_MS;
+          timer = setTimeout(poll, interval);
         }
       } catch (err: any) {
         setError(err.message || "Failed to load chapters");
@@ -303,24 +334,46 @@ export default function Home() {
 
   useEffect(() => {
     if (!bookId) {
+      if (heartbeatTimerRef.current) {
+        clearTimeout(heartbeatTimerRef.current);
+        heartbeatTimerRef.current = null;
+      }
       return;
     }
-    let heartbeatTimer: NodeJS.Timeout | null = null;
-    const beat = async () => {
-      try {
-        await heartbeatBook(bookId);
-      } catch {
-        // ignore heartbeat errors to avoid noisy UI
+    const hasProcessing =
+      chapters.length === 0 ||
+      chapters.some(
+        (chapter) => chapter.status === "PROCESSING" || chapter.status === "PENDING"
+      );
+    if (!hasProcessing) {
+      if (heartbeatTimerRef.current) {
+        clearTimeout(heartbeatTimerRef.current);
+        heartbeatTimerRef.current = null;
       }
-      heartbeatTimer = setTimeout(beat, 10000);
+      return;
+    }
+    const beat = async () => {
+      const now = Date.now();
+      const idleTooLong =
+        document.visibilityState === "hidden" &&
+        now - lastActivityRef.current >= HEARTBEAT_IDLE_TIMEOUT_MS;
+      if (!idleTooLong) {
+        try {
+          await heartbeatBook(bookId);
+        } catch {
+          // ignore heartbeat errors to avoid noisy UI
+        }
+      }
+      heartbeatTimerRef.current = setTimeout(beat, HEARTBEAT_INTERVAL_MS);
     };
     beat();
     return () => {
-      if (heartbeatTimer) {
-        clearTimeout(heartbeatTimer);
+      if (heartbeatTimerRef.current) {
+        clearTimeout(heartbeatTimerRef.current);
+        heartbeatTimerRef.current = null;
       }
     };
-  }, [bookId]);
+  }, [bookId, chapters]);
   useEffect(() => {
     if (!bookId) {
       if (progressTimerRef.current) {
@@ -334,6 +387,40 @@ export default function Home() {
       progressMetaRef.current = null;
       setProgressPercent(0);
       return;
+    }
+
+    if (totalChapters === 0) {
+      if (
+        !progressMetaRef.current ||
+        progressMetaRef.current.chapterId !== "__book__"
+      ) {
+        progressMetaRef.current = {
+          chapterId: "__book__",
+          startedAt: Date.now()
+        };
+        setProgressPercent(0);
+      }
+      setProgressSpeedMs(300);
+      if (progressTimerRef.current) {
+        clearTimeout(progressTimerRef.current);
+      }
+      const tick = () => {
+        if (!progressMetaRef.current) {
+          return;
+        }
+        const elapsed = Date.now() - progressMetaRef.current.startedAt;
+        setProgressPercent(progressFromElapsed(elapsed));
+        if (elapsed < TOTAL_PROGRESS_MS) {
+          progressTimerRef.current = setTimeout(tick, 300);
+        }
+      };
+      tick();
+      return () => {
+        if (progressTimerRef.current) {
+          clearTimeout(progressTimerRef.current);
+          progressTimerRef.current = null;
+        }
+      };
     }
 
     if (processingChapter) {
@@ -401,9 +488,7 @@ export default function Home() {
       progressMetaRef.current = null;
     }
 
-    if (totalChapters === 0) {
-      setProgressPercent(5);
-    } else if (allTerminal) {
+    if (allTerminal) {
       setProgressPercent(100);
     } else {
       setProgressPercent(0);
@@ -686,7 +771,10 @@ export default function Home() {
           {bookId ? (
             <div className="panel status-card">
               <div className="panel-title spaced">
-                <div className="label-strong">{progressLabel}</div>
+                <div className="status-title">
+                  <span className="progress-spinner" aria-hidden="true" />
+                  <span className="label-strong">{progressLabel}</span>
+                </div>
                 <div className="muted">{bookId}</div>
               </div>
               <div className="progress-track">
@@ -699,7 +787,8 @@ export default function Home() {
                 />
               </div>
               <div className="progress-meta">
-                {doneCount}/{totalChapters || 0}
+                <span>{doneCount}/{totalChapters || 0}</span>
+                <span>{Math.round(progressPercent)}%</span>
               </div>
               {usageSummary ? (
                 <div className="progress-meta secondary">
