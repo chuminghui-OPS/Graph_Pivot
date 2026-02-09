@@ -423,6 +423,14 @@ export async function fetchUserProfile() {
   return (await res.json()) as UserProfile;
 }
 
+export async function fetchUserBooks() {
+  const res = await authFetch(`${API_BASE}/api/user/books`);
+  if (!res.ok) {
+    throw new Error(await res.text());
+  }
+  return (await res.json()) as UserBook[];
+}
+
 export async function fetchUserUsage() {
   const res = await authFetch(`${API_BASE}/api/user/usage`);
   if (!res.ok) {
