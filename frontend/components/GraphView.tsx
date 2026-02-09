@@ -342,7 +342,7 @@ export function GraphView({
 
       graphRef.current = graphInstance;
       (graphInstance as any).render?.();
-      graphInstance.fitView?.({ padding: 30 });
+      graphInstance.fitView?.();
     };
     initGraph();
     return () => {

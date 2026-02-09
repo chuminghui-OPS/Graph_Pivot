@@ -11,14 +11,14 @@ resource .tar
 # env files
 .env
 .env.*
-!.env.example
+.env.example
 !.env.docker.example
 backend/.env
 backend/.env.*
-!backend/.env.example
+backend/.env.example
 backend/config/.env
 backend/config/.env.*
-!backend/config/.env.example
+backend/config/.env.example
 frontend/.env.local
 frontend/.env.local.*
 !frontend/.env.local.example

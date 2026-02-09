@@ -400,7 +400,7 @@ onMounted(async () => {
 
   graphRef.value = graphInstance;
   (graphInstance as any).render?.();
-  graphInstance.fitView?.({ padding: 30 });
+  graphInstance.fitView?.();
   emit("graph-actions", actions);
 
   const resizeObserver = new ResizeObserver((entries) => {
