@@ -447,10 +447,12 @@ body {
   grid-template-columns: 2fr 1fr;
   gap: var(--gutter);
   min-height: 460px;
+  height: clamp(520px, 70vh, 820px);
 }
 
 .workspace .panel {
   min-height: 0;
+  height: 100%;
 }
 
 .page {
@@ -887,20 +889,25 @@ body {
 
 .reader-body {
   flex: 1;
+  display: flex;
+  flex-direction: column;
   overflow: hidden;
   min-height: 0;
 }
 
 .pdf-frame {
   width: 100%;
-  height: 100%;
+  flex: 1;
+  min-height: 0;
   border: none;
   border-radius: var(--radius-lg);
 }
 
 .markdown-body {
+  flex: 1;
+  min-height: 0;
   overflow-y: auto;
-  height: 100%;
+  overflow-x: hidden;
   padding-right: 6px;
   font-family: "Source Serif 4", serif;
   line-height: 1.6;

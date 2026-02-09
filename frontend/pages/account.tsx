@@ -47,6 +47,13 @@ function AccountPage() {
   });
   const [message, setMessage] = useState<string | null>(null);
   const hasConfig = hasSupabaseConfig();
+  const buildUsageMap = (rows: UserUsageBookRow[]) => {
+    const usageMap: Record<string, UserUsageBookRow> = {};
+    for (const row of rows) {
+      usageMap[row.book_id] = row;
+    }
+    return usageMap;
+  };
 
   useEffect(() => {
     const supabase = getSupabaseClient();
@@ -90,11 +97,7 @@ function AccountPage() {
         setProfile(profileData);
         setBooks(booksData);
         setAssets(assetsData);
-        const usageMap: Record<string, UserUsageBookRow> = {};
-        for (const row of usageData) {
-          usageMap[row.book_id] = row;
-        }
-        setUsageByBook(usageMap);
+        setUsageByBook(buildUsageMap(usageData));
         if (!activeAssetId && assetsData.length > 0) {
           setActiveAssetId(assetsData[0].id);
         }
@@ -284,12 +287,23 @@ function AccountPage() {
     if (!confirm("确认删除该书籍？该操作会删除章节与图谱数据。")) return;
     try {
       await deleteBook(bookId);
-      setBooks((prev) => prev.filter((item) => item.book_id !== bookId));
-      setUsageByBook((prev) => {
-        const next = { ...prev };
-        delete next[bookId];
-        return next;
-      });
+      try {
+        const [profileData, booksData, usageData] = await Promise.all([
+          fetchUserProfile(),
+          fetchUserBooks(),
+          fetchUserUsage()
+        ]);
+        setProfile(profileData);
+        setBooks(booksData);
+        setUsageByBook(buildUsageMap(usageData));
+      } catch {
+        setBooks((prev) => prev.filter((item) => item.book_id !== bookId));
+        setUsageByBook((prev) => {
+          const next = { ...prev };
+          delete next[bookId];
+          return next;
+        });
+      }
       setMessage("已删除书籍");
     } catch (err: any) {
       setMessage(err.message || "删除失败");
