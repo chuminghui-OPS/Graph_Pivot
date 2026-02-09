@@ -57,17 +57,50 @@ class GraphNode(BaseModel):
 
 
 class GraphEdge(BaseModel):
+    id: Optional[str] = None
     source: str
     target: str
     relation: str
     evidence: str
     confidence: float = 0.5
+    source_text_location: Optional[str] = None
 
 
 class KnowledgeGraph(BaseModel):
     chapter_id: str
     nodes: List[GraphNode] = Field(default_factory=list)
     edges: List[GraphEdge] = Field(default_factory=list)
+
+
+class GraphNodeCreate(BaseModel):
+    id: Optional[str] = None
+    name: str
+    type: str
+
+
+class GraphNodeUpdate(BaseModel):
+    name: Optional[str] = None
+    type: Optional[str] = None
+
+
+class GraphEdgeCreate(BaseModel):
+    id: Optional[str] = None
+    source: str
+    target: str
+    relation: str
+    evidence: str = ""
+    confidence: float = 0.5
+    source_text_location: Optional[str] = None
+
+
+class GraphEdgeUpdate(BaseModel):
+    id: Optional[str] = None
+    source: Optional[str] = None
+    target: Optional[str] = None
+    relation: Optional[str] = None
+    evidence: Optional[str] = None
+    confidence: Optional[float] = None
+    source_text_location: Optional[str] = None
 
 
 class LLMEntity(BaseModel):

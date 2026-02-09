@@ -9,6 +9,7 @@ import {
   UserUsageBookRow,
   createAsset,
   deleteAsset,
+  deleteBook,
   discoverAssetModels,
   fetchAssets,
   fetchUserBooks,
@@ -279,6 +280,22 @@ function AccountPage() {
     router.push("/login");
   };
 
+  const handleDeleteBook = async (bookId: string) => {
+    if (!confirm("确认删除该书籍？该操作会删除章节与图谱数据。")) return;
+    try {
+      await deleteBook(bookId);
+      setBooks((prev) => prev.filter((item) => item.book_id !== bookId));
+      setUsageByBook((prev) => {
+        const next = { ...prev };
+        delete next[bookId];
+        return next;
+      });
+      setMessage("已删除书籍");
+    } catch (err: any) {
+      setMessage(err.message || "删除失败");
+    }
+  };
+
   return (
     <div className="app-shell">
       <header className="topbar">
@@ -488,6 +505,15 @@ function AccountPage() {
                         (usageByBook[book.book_id]?.tokens_out || 0)}{" "}
                       (calls {usageByBook[book.book_id]?.calls || 0})
                     </div>
+                  </div>
+                  <div className="book-actions">
+                    <button
+                      className="ghost danger"
+                      type="button"
+                      onClick={() => handleDeleteBook(book.book_id)}
+                    >
+                      删除
+                    </button>
                   </div>
                 </div>
               ))

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from typing import Any, Dict, List
+from uuid import uuid4
 
 
 # 将多个 chunk 的抽取结果合并为章节级图谱
@@ -31,6 +32,7 @@ def build_chapter_graph(chapter_id: str, chunk_results: List[Dict[str, Any]]) ->
             ensure_entity(source)
             ensure_entity(target)
             edge = {
+                "id": uuid4().hex,
                 "source": source,
                 "target": target,
                 "relation": relation.get("relation", "").strip(),

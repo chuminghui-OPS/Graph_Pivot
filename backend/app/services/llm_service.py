@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import re
+import time
 from typing import Any, Dict, Optional
 
 import httpx
@@ -77,12 +78,25 @@ def _format_llm_error(exc: Exception) -> str:
         lowered = message.lower()
         if status in (401, 403):
             return "模型密钥无效或权限不足"
-        if status in (402, 429) or "insufficient" in lowered or "quota" in lowered or "balance" in lowered:
+        if status == 429 or "rate limit" in lowered or "ratelimit" in lowered:
+            return "模型调用被限流，请稍后重试"
+        if status == 402 or "insufficient" in lowered or "quota" in lowered or "balance" in lowered:
             return "模型余额不足或调用额度不足"
         return f"模型服务调用失败（{status}）: {message}"
     if isinstance(exc, httpx.HTTPError):
         return "模型服务调用失败，请检查网络或服务状态"
     return str(exc)[:300]
+
+
+def _get_retry_delay(exc: httpx.HTTPError, attempt: int) -> float:
+    if isinstance(exc, httpx.HTTPStatusError):
+        status = exc.response.status_code
+        if status == 429:
+            retry_after = exc.response.headers.get("Retry-After")
+            if retry_after and retry_after.isdigit():
+                return min(30.0, float(retry_after))
+            return min(30.0, 2.0 * (attempt + 1))
+    return 0.0
 
 # 获取当前 LLM 提供方信息（供前端展示）
 def get_llm_info(provider_override: str | None = None) -> Dict[str, str]:
@@ -202,7 +216,7 @@ def extract_with_validation(
 ) -> Dict[str, Any]:
     last_error: str | None = None
     last_error_code: str | None = None
-    for _ in range(max_retries + 1):
+    for attempt in range(max_retries + 1):
         try:
             result = _call_llm(text, provider_override, config_override, book_type)
             # 校验结构合法性
@@ -215,6 +229,9 @@ def extract_with_validation(
             # 记录错误并继续重试
             last_error_code = "LLM_HTTP_ERROR"
             last_error = _format_llm_error(exc)
+            delay = _get_retry_delay(exc, attempt)
+            if delay > 0:
+                time.sleep(delay)
             continue
         except (json.JSONDecodeError, ValidationError) as exc:
             last_error_code = "LLM_VALIDATION_FAILED"

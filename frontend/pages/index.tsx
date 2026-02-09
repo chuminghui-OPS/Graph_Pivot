@@ -1,8 +1,9 @@
 import Link from "next/link";
-import React, { useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/router";
 import { ChapterList } from "../components/ChapterList";
 import { GraphView } from "../components/GraphView";
+import type { GraphActions } from "../components/GraphView";
 import { ReaderPanel } from "../components/ReaderPanel";
 import {
   API_BASE,
@@ -18,7 +19,8 @@ import {
   uploadBook,
   fetchBookPdfUrl,
   KnowledgeGraph,
-  BookType
+  BookType,
+  publishBook
 } from "../lib/api";
 import { getSupabaseClient, hasSupabaseConfig } from "../lib/supabase";
 
@@ -83,6 +85,25 @@ export default function Home() {
   const [markdown, setMarkdown] = useState<string>("");
   const [highlightTerm, setHighlightTerm] = useState<string | null>(null);
   const [evidence, setEvidence] = useState<string | null>(null);
+  const [edgeEditor, setEdgeEditor] = useState<{
+    id: string;
+    source: string;
+    target: string;
+    relation: string;
+    evidence: string;
+    confidence: number;
+    source_text_location?: string | null;
+  } | null>(null);
+  const [edgeCreator, setEdgeCreator] = useState<{
+    source: string;
+    target: string;
+    relation: string;
+    evidence: string;
+    source_text_location?: string | null;
+  } | null>(null);
+  const [edgeCreating, setEdgeCreating] = useState(false);
+  const [edgeSaving, setEdgeSaving] = useState(false);
+  const graphActionsRef = useRef<GraphActions | null>(null);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [runError, setRunError] = useState<string | null>(null);
@@ -91,6 +112,8 @@ export default function Home() {
     tokensIn: number;
     tokensOut: number;
   } | null>(null);
+  const [publishMessage, setPublishMessage] = useState<string | null>(null);
+  const [publishing, setPublishing] = useState(false);
   const [llmInfo, setLlmInfo] = useState<{ provider: string; model: string } | null>(null);
   const [manualBookId, setManualBookId] = useState("");
   const [progressPercent, setProgressPercent] = useState(0);
@@ -109,6 +132,18 @@ export default function Home() {
   const lastActivityRef = useRef<number>(Date.now());
   const heartbeatTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(true);
+
+  const loadBookById = useCallback((id: string) => {
+    setError(null);
+    setBookId(id);
+    setManualBookId(id);
+    setChapters([]);
+    setActiveChapterId(null);
+    setGraph(null);
+    setMarkdown("");
+    setHighlightTerm(null);
+    setEvidence(null);
+  }, []);
 
   useEffect(() => {
     let mounted = true;
@@ -141,6 +176,17 @@ export default function Home() {
       data.subscription.unsubscribe();
     };
   }, [router]);
+
+  useEffect(() => {
+    if (!router.isReady) return;
+    const queryId = router.query.book_id;
+    if (typeof queryId === "string" && queryId.trim()) {
+      const nextId = queryId.trim();
+      if (bookId !== nextId) {
+        loadBookById(nextId);
+      }
+    }
+  }, [router.isReady, router.query.book_id, bookId, loadBookById]);
 
   useEffect(() => {
     const markActive = () => {
@@ -215,6 +261,7 @@ export default function Home() {
   const shouldSpin = Boolean(bookId) && (totalChapters === 0 || !!processingChapter);
   const selectedAsset = assets.find((item) => item.id === selectedAssetId) || null;
   const assetModels = selectedAsset?.models || [];
+  const graphNodes = graph?.nodes || [];
 
   let progressLabel = "";
   if (bookId && totalChapters === 0) {
@@ -513,6 +560,8 @@ export default function Home() {
       }
     };
     loadChapterData();
+    setEdgeEditor(null);
+    setEdgeCreator(null);
   }, [bookId, activeChapterId]);
 
   const handleUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -557,12 +606,63 @@ export default function Home() {
       setError("请输入 book_id");
       return;
     }
-    setError(null);
-    setBookId(trimmed);
-    setChapters([]);
-    setActiveChapterId(null);
-    setGraph(null);
-    setMarkdown("");
+    loadBookById(trimmed);
+  };
+
+  const handlePublish = async () => {
+    if (!bookId) return;
+    setPublishMessage(null);
+    setPublishing(true);
+    try {
+      await publishBook(bookId);
+      setPublishMessage("已发布到公共书库");
+    } catch (err: any) {
+      setPublishMessage(err.message || "发布失败");
+    } finally {
+      setPublishing(false);
+    }
+  };
+
+  const handleEdgeSave = async () => {
+    if (!edgeEditor) return;
+    if (!graphActionsRef.current) return;
+    setEdgeSaving(true);
+    try {
+      await graphActionsRef.current.update("edge", edgeEditor.id, {
+        relation: edgeEditor.relation,
+        evidence: edgeEditor.evidence,
+        source_text_location: edgeEditor.source_text_location ?? null
+      });
+      setEdgeEditor(null);
+    } catch (err: any) {
+      setError(err.message || "更新关系失败");
+    } finally {
+      setEdgeSaving(false);
+    }
+  };
+
+  const handleEdgeCreate = async () => {
+    if (!edgeCreator) return;
+    if (!graphActionsRef.current) return;
+    if (!edgeCreator.source || !edgeCreator.target || !edgeCreator.relation) {
+      setError("请填写关系的 source/target/relation");
+      return;
+    }
+    setEdgeCreating(true);
+    try {
+      await graphActionsRef.current.add("edge", {
+        source: edgeCreator.source,
+        target: edgeCreator.target,
+        relation: edgeCreator.relation,
+        evidence: edgeCreator.evidence,
+        source_text_location: edgeCreator.source_text_location ?? null
+      });
+      setEdgeCreator(null);
+    } catch (err: any) {
+      setError(err.message || "创建关系失败");
+    } finally {
+      setEdgeCreating(false);
+    }
   };
 
   if (!authReady) {
@@ -648,6 +748,9 @@ export default function Home() {
           {error ? <div className="banner banner-error">{error}</div> : null}
           {runError ? (
             <div className="banner banner-error">模型调用失败：{runError}</div>
+          ) : null}
+          {publishMessage ? (
+            <div className="banner">{publishMessage}</div>
           ) : null}
 
           <section className="control-grid">
@@ -801,11 +904,22 @@ export default function Home() {
                   {usageSummary.calls}
                 </div>
               ) : null}
+              <div className="progress-actions">
+                <button
+                  className="primary"
+                  type="button"
+                  onClick={handlePublish}
+                  disabled={publishing}
+                >
+                  {publishing ? "发布中..." : "发布到公共书库"}
+                </button>
+              </div>
             </div>
           ) : null}
 
           <section className="workspace">
             <GraphView
+              bookId={bookId}
               graph={graph}
               onSelectNode={(name) => {
                 setHighlightTerm(name);
@@ -814,6 +928,28 @@ export default function Home() {
               onSelectEdge={(evidenceText) => {
                 setEvidence(evidenceText);
                 setHighlightTerm(evidenceText);
+              }}
+              onEditEdge={(edge) => {
+                setEdgeEditor(edge);
+              }}
+              onCreateEdge={(payload) => {
+                const nodes = graph?.nodes || [];
+                const fallbackSource = payload.source || nodes[0]?.name || "";
+                const fallbackTarget =
+                  nodes.find((node) => node.name !== fallbackSource)?.name || nodes[0]?.name || "";
+                setEdgeCreator({
+                  source: fallbackSource,
+                  target: fallbackTarget,
+                  relation: "",
+                  evidence: "",
+                  source_text_location: null
+                });
+              }}
+              onGraphActions={(actions) => {
+                graphActionsRef.current = actions;
+              }}
+              onGraphChange={(nextGraph) => {
+                setGraph(nextGraph);
               }}
             />
             <ReaderPanel
@@ -825,6 +961,167 @@ export default function Home() {
           </section>
         </div>
       </div>
+
+      {edgeEditor ? (
+        <div className="modal-backdrop" role="dialog" aria-modal="true">
+          <div className="modal">
+            <div className="modal-title">编辑关系</div>
+            <div className="detail-row">
+              <label className="field-label">Source</label>
+              <div>{edgeEditor.source}</div>
+            </div>
+            <div className="detail-row">
+              <label className="field-label">Target</label>
+              <div>{edgeEditor.target}</div>
+            </div>
+            <label className="field">
+              <span>Relation</span>
+              <input
+                type="text"
+                value={edgeEditor.relation}
+                onChange={(event) =>
+                  setEdgeEditor((prev) =>
+                    prev ? { ...prev, relation: event.target.value } : prev
+                  )
+                }
+              />
+            </label>
+            <label className="field">
+              <span>Evidence</span>
+              <input
+                type="text"
+                value={edgeEditor.evidence}
+                onChange={(event) =>
+                  setEdgeEditor((prev) =>
+                    prev ? { ...prev, evidence: event.target.value } : prev
+                  )
+                }
+              />
+            </label>
+            <label className="field">
+              <span>source_text_location</span>
+              <input
+                type="text"
+                value={edgeEditor.source_text_location || ""}
+                onChange={(event) =>
+                  setEdgeEditor((prev) =>
+                    prev
+                      ? { ...prev, source_text_location: event.target.value || null }
+                      : prev
+                  )
+                }
+              />
+            </label>
+            <div className="detail-actions">
+              <button className="ghost" type="button" onClick={() => setEdgeEditor(null)}>
+                取消
+              </button>
+              <button className="primary" type="button" onClick={handleEdgeSave} disabled={edgeSaving}>
+                {edgeSaving ? "保存中..." : "保存"}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {edgeCreator ? (
+        <div className="modal-backdrop" role="dialog" aria-modal="true">
+          <div className="modal">
+            <div className="modal-title">创建关系</div>
+            {graphNodes.length === 0 ? (
+              <div className="empty">当前图谱没有节点，无法创建关系。</div>
+            ) : (
+              <>
+                <label className="field">
+                  <span>Source</span>
+                  <select
+                    value={edgeCreator.source}
+                    onChange={(event) =>
+                      setEdgeCreator((prev) =>
+                        prev ? { ...prev, source: event.target.value } : prev
+                      )
+                    }
+                  >
+                    {graphNodes.map((node) => (
+                      <option key={node.id} value={node.name}>
+                        {node.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="field">
+                  <span>Target</span>
+                  <select
+                    value={edgeCreator.target}
+                    onChange={(event) =>
+                      setEdgeCreator((prev) =>
+                        prev ? { ...prev, target: event.target.value } : prev
+                      )
+                    }
+                  >
+                    {graphNodes.map((node) => (
+                      <option key={node.id} value={node.name}>
+                        {node.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="field">
+                  <span>Relation</span>
+                  <input
+                    type="text"
+                    value={edgeCreator.relation}
+                    onChange={(event) =>
+                      setEdgeCreator((prev) =>
+                        prev ? { ...prev, relation: event.target.value } : prev
+                      )
+                    }
+                  />
+                </label>
+                <label className="field">
+                  <span>Evidence</span>
+                  <input
+                    type="text"
+                    value={edgeCreator.evidence}
+                    onChange={(event) =>
+                      setEdgeCreator((prev) =>
+                        prev ? { ...prev, evidence: event.target.value } : prev
+                      )
+                    }
+                  />
+                </label>
+                <label className="field">
+                  <span>source_text_location</span>
+                  <input
+                    type="text"
+                    value={edgeCreator.source_text_location || ""}
+                    onChange={(event) =>
+                      setEdgeCreator((prev) =>
+                        prev
+                          ? { ...prev, source_text_location: event.target.value || null }
+                          : prev
+                      )
+                    }
+                  />
+                </label>
+              </>
+            )}
+            <div className="detail-actions">
+              <button className="ghost" type="button" onClick={() => setEdgeCreator(null)}>
+                取消
+              </button>
+              <button
+                className="primary"
+                type="button"
+                onClick={handleEdgeCreate}
+                disabled={edgeCreating || graphNodes.length === 0}
+              >
+                {edgeCreating ? "创建中..." : "创建"}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

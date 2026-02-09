@@ -623,6 +623,11 @@ body {
   color: var(--muted);
 }
 
+.progress-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
 .status-title {
   display: inline-flex;
   align-items: center;
@@ -800,6 +805,20 @@ body {
   border-radius: var(--radius-lg);
   background: #f8fafc;
   border: 1px dashed rgba(17, 24, 39, 0.12);
+}
+
+.g6-contextmenu {
+  font-family: "Space Grotesk", system-ui, sans-serif;
+  border-radius: 10px;
+  box-shadow: 0 12px 22px rgba(15, 23, 42, 0.12);
+}
+
+.g6-contextmenu-li {
+  color: #1f2937;
+}
+
+.g6-contextmenu-li:hover {
+  background-color: rgba(15, 118, 110, 0.08);
 }
 
 .graph-fullscreen-btn {
@@ -1317,6 +1336,17 @@ body {
   display: flex;
   gap: 10px;
   align-items: center;
+  justify-content: space-between;
+}
+
+.book-card.clickable {
+  cursor: pointer;
+  transition: box-shadow 0.3s ease, transform 0.2s ease;
+}
+
+.book-card.clickable:hover {
+  box-shadow: 0 12px 24px rgba(15, 23, 42, 0.08);
+  transform: translateY(-1px);
 }
 
 .book-cover {
@@ -1334,6 +1364,41 @@ body {
   display: flex;
   flex-direction: column;
   gap: 4px;
+}
+
+.book-status {
+  font-size: 12px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  width: fit-content;
+  background: #e5e7eb;
+  color: #6b7280;
+}
+
+.book-status.published {
+  background: rgba(15, 118, 110, 0.16);
+  color: #0f766e;
+}
+
+.book-status.draft {
+  background: rgba(234, 179, 8, 0.16);
+  color: #a16207;
+}
+
+.book-actions {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+}
+
+.ghost.danger {
+  border-color: rgba(220, 38, 38, 0.3);
+  color: #b91c1c;
+}
+
+.ghost.danger:hover {
+  background: rgba(220, 38, 38, 0.08);
+  border-color: rgba(220, 38, 38, 0.6);
 }
 
 .book-title {

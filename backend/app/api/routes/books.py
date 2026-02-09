@@ -4,6 +4,7 @@ import os
 import shutil
 from urllib.parse import quote
 from datetime import datetime, timedelta
+from uuid import uuid4
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, Query, Form
 from sqlalchemy import func
@@ -19,6 +20,10 @@ from app.core.schemas import (
     KnowledgeGraph,
     ProcessResponse,
     UploadResponse,
+    GraphNodeCreate,
+    GraphNodeUpdate,
+    GraphEdgeCreate,
+    GraphEdgeUpdate,
     PublishBookRequest,
     PublishBookByIdRequest,
     PublicBookOut,
@@ -27,7 +32,17 @@ from app.core.schemas import (
 )
 from app.core.celery_app import celery_app
 from app.core.auth import UserContext, get_current_user
-from app.models import Book, Chapter, ChapterGraph, ApiAsset, PublicBook, LLMUsageEvent
+from app.models import (
+    Book,
+    Chapter,
+    ChapterGraph,
+    ApiAsset,
+    PublicBook,
+    LLMUsageEvent,
+    Chunk,
+    PublicBookFavorite,
+    PublicBookRepost,
+)
 from app.services.llm_service import get_llm_info
 from app.services.md_service import load_chapter_text
 from app.services.statistics import record_book_upload
@@ -46,6 +61,53 @@ _STATUS_MAP = {
     "failed": "FAILED",
     "paused": "PAUSED",
 }
+
+
+def _ensure_graph_payload(graph_json: dict, chapter_id: str) -> dict:
+    payload = graph_json or {}
+    payload["chapter_id"] = chapter_id
+    payload.setdefault("nodes", [])
+    payload.setdefault("edges", [])
+    return payload
+
+
+def _ensure_edge_ids(graph_json: dict) -> bool:
+    changed = False
+    for edge in graph_json.get("edges", []):
+        if not edge.get("id"):
+            edge["id"] = uuid4().hex
+            changed = True
+    return changed
+
+
+def _get_latest_graph_row(db: Session, chapter: Chapter) -> ChapterGraph | None:
+    return (
+        db.query(ChapterGraph)
+        .filter(ChapterGraph.chapter_id == chapter.id)
+        .order_by(ChapterGraph.id.desc())
+        .first()
+    )
+
+
+def _get_editable_graph(db: Session, chapter: Chapter) -> ChapterGraph:
+    graph_row = _get_latest_graph_row(db, chapter)
+    if graph_row:
+        graph_row.graph_json = _ensure_graph_payload(
+            graph_row.graph_json, chapter.chapter_id
+        )
+        if _ensure_edge_ids(graph_row.graph_json):
+            db.commit()
+        return graph_row
+
+    graph_row = ChapterGraph(
+        id=f"{chapter.id}:{uuid4().hex}",
+        chapter_id=chapter.id,
+        graph_json=_ensure_graph_payload({}, chapter.chapter_id),
+    )
+    db.add(graph_row)
+    db.commit()
+    db.refresh(graph_row)
+    return graph_row
 
 
 def _normalize_status(value: str) -> str:
@@ -73,6 +135,12 @@ def _refresh_book_status(db: Session, book_id: str) -> None:
     if book:
         book.status = "failed" if any_failed else "done"
         db.commit()
+
+
+def _can_access_book(db: Session, book: Book, user: UserContext) -> bool:
+    if book.user_id == user.user_id:
+        return True
+    return db.get(PublicBook, book.id) is not None
 
 
 # 上传 PDF 并创建书籍记录
@@ -137,7 +205,7 @@ def process_book(
     user: UserContext = Depends(get_current_user),
 ) -> ProcessResponse:
     book = db.get(Book, book_id)
-    if not book or book.user_id != user.user_id:
+    if not book or not _can_access_book(db, book, user):
         raise HTTPException(status_code=404, detail="Book not found.")
 
     provider = llm.lower()
@@ -181,7 +249,7 @@ def heartbeat_book(
     user: UserContext = Depends(get_current_user),
 ) -> dict:
     book = db.get(Book, book_id)
-    if not book or book.user_id != user.user_id:
+    if not book or not _can_access_book(db, book, user):
         raise HTTPException(status_code=404, detail="Book not found.")
     book.last_seen_at = datetime.utcnow()
     db.commit()
@@ -215,13 +283,13 @@ def list_chapters(
         if normalized != chapter.status:
             chapter.status = normalized
             updated = True
-        if (
-            chapter.status == "PROCESSING"
-            and chapter.processing_started_at
-            and now - chapter.processing_started_at > timedelta(seconds=280)
-        ):
-            chapter.status = "TIMEOUT"
-            updated = True
+        if chapter.status == "PROCESSING" and chapter.processing_started_at:
+            timeout_seconds = settings.chapter_processing_timeout_seconds
+            if timeout_seconds > 0 and now - chapter.processing_started_at > timedelta(
+                seconds=timeout_seconds
+            ):
+                chapter.status = "TIMEOUT"
+                updated = True
     if updated:
         db.commit()
         _refresh_book_status(db, book_id)
@@ -284,7 +352,7 @@ def get_chapter_markdown(
         raise HTTPException(status_code=404, detail="Chapter not found.")
 
     book = db.get(Book, book_id)
-    if not book or book.user_id != user.user_id or not book.md_path:
+    if not book or not _can_access_book(db, book, user) or not book.md_path:
         raise HTTPException(status_code=404, detail="Markdown not ready.")
 
     # 按字符范围懒加载章节内容
@@ -322,7 +390,249 @@ def get_chapter_graph(
     if not graph_row:
         return KnowledgeGraph(chapter_id=chapter_id, nodes=[], edges=[])
 
+    graph_row.graph_json = _ensure_graph_payload(graph_row.graph_json, chapter_id)
+    if _ensure_edge_ids(graph_row.graph_json):
+        db.commit()
     return KnowledgeGraph(**graph_row.graph_json)
+
+
+@router.post(
+    "/{book_id}/chapters/{chapter_id}/graph/nodes", response_model=GraphNodeCreate
+)
+def create_graph_node(
+    book_id: str,
+    chapter_id: str,
+    payload: GraphNodeCreate,
+    db: Session = Depends(get_db),
+    user: UserContext = Depends(get_current_user),
+) -> GraphNodeCreate:
+    chapter = (
+        db.query(Chapter)
+        .filter(Chapter.book_id == book_id, Chapter.chapter_id == chapter_id)
+        .first()
+    )
+    if not chapter:
+        raise HTTPException(status_code=404, detail="Chapter not found.")
+    book = db.get(Book, book_id)
+    if not book or book.user_id != user.user_id:
+        raise HTTPException(status_code=404, detail="Book not found.")
+
+    graph_row = _get_editable_graph(db, chapter)
+    graph_json = graph_row.graph_json
+
+    node_id = payload.id or f"n{uuid4().hex}"
+    node = {"id": node_id, "name": payload.name, "type": payload.type}
+    graph_json["nodes"].append(node)
+    db.commit()
+    return GraphNodeCreate(**node)
+
+
+@router.patch(
+    "/{book_id}/chapters/{chapter_id}/graph/nodes/{node_id}",
+    response_model=GraphNodeCreate,
+)
+def update_graph_node(
+    book_id: str,
+    chapter_id: str,
+    node_id: str,
+    payload: GraphNodeUpdate,
+    db: Session = Depends(get_db),
+    user: UserContext = Depends(get_current_user),
+) -> GraphNodeCreate:
+    chapter = (
+        db.query(Chapter)
+        .filter(Chapter.book_id == book_id, Chapter.chapter_id == chapter_id)
+        .first()
+    )
+    if not chapter:
+        raise HTTPException(status_code=404, detail="Chapter not found.")
+    book = db.get(Book, book_id)
+    if not book or book.user_id != user.user_id:
+        raise HTTPException(status_code=404, detail="Book not found.")
+
+    graph_row = _get_editable_graph(db, chapter)
+    graph_json = graph_row.graph_json
+    node = next((item for item in graph_json["nodes"] if item.get("id") == node_id), None)
+    if not node:
+        raise HTTPException(status_code=404, detail="Node not found.")
+
+    prev_name = node.get("name")
+    if payload.name is not None:
+        node["name"] = payload.name
+    if payload.type is not None:
+        node["type"] = payload.type
+
+    if payload.name and prev_name and payload.name != prev_name:
+        for edge in graph_json.get("edges", []):
+            if edge.get("source") == prev_name:
+                edge["source"] = payload.name
+            if edge.get("target") == prev_name:
+                edge["target"] = payload.name
+
+    db.commit()
+    return GraphNodeCreate(**node)
+
+
+@router.delete(
+    "/{book_id}/chapters/{chapter_id}/graph/nodes/{node_id}",
+    response_model=dict,
+)
+def delete_graph_node(
+    book_id: str,
+    chapter_id: str,
+    node_id: str,
+    db: Session = Depends(get_db),
+    user: UserContext = Depends(get_current_user),
+) -> dict:
+    chapter = (
+        db.query(Chapter)
+        .filter(Chapter.book_id == book_id, Chapter.chapter_id == chapter_id)
+        .first()
+    )
+    if not chapter:
+        raise HTTPException(status_code=404, detail="Chapter not found.")
+    book = db.get(Book, book_id)
+    if not book or book.user_id != user.user_id:
+        raise HTTPException(status_code=404, detail="Book not found.")
+
+    graph_row = _get_editable_graph(db, chapter)
+    graph_json = graph_row.graph_json
+
+    node = next((item for item in graph_json["nodes"] if item.get("id") == node_id), None)
+    if not node:
+        raise HTTPException(status_code=404, detail="Node not found.")
+
+    graph_json["nodes"] = [item for item in graph_json["nodes"] if item.get("id") != node_id]
+    node_name = node.get("name")
+    if node_name:
+        graph_json["edges"] = [
+            edge
+            for edge in graph_json.get("edges", [])
+            if edge.get("source") not in {node_name, node_id}
+            and edge.get("target") not in {node_name, node_id}
+        ]
+    db.commit()
+    return {"ok": True, "node_id": node_id}
+
+
+@router.post(
+    "/{book_id}/chapters/{chapter_id}/graph/edges", response_model=GraphEdgeCreate
+)
+def create_graph_edge(
+    book_id: str,
+    chapter_id: str,
+    payload: GraphEdgeCreate,
+    db: Session = Depends(get_db),
+    user: UserContext = Depends(get_current_user),
+) -> GraphEdgeCreate:
+    chapter = (
+        db.query(Chapter)
+        .filter(Chapter.book_id == book_id, Chapter.chapter_id == chapter_id)
+        .first()
+    )
+    if not chapter:
+        raise HTTPException(status_code=404, detail="Chapter not found.")
+    book = db.get(Book, book_id)
+    if not book or book.user_id != user.user_id:
+        raise HTTPException(status_code=404, detail="Book not found.")
+
+    graph_row = _get_editable_graph(db, chapter)
+    graph_json = graph_row.graph_json
+
+    edge_id = payload.id or uuid4().hex
+    edge = {
+        "id": edge_id,
+        "source": payload.source,
+        "target": payload.target,
+        "relation": payload.relation,
+        "evidence": payload.evidence or "",
+        "confidence": payload.confidence if payload.confidence is not None else 0.5,
+        "source_text_location": payload.source_text_location,
+    }
+    graph_json["edges"].append(edge)
+    db.commit()
+    return GraphEdgeCreate(**edge)
+
+
+@router.patch(
+    "/{book_id}/chapters/{chapter_id}/graph/edges/{edge_id}",
+    response_model=GraphEdgeCreate,
+)
+def update_graph_edge(
+    book_id: str,
+    chapter_id: str,
+    edge_id: str,
+    payload: GraphEdgeUpdate,
+    db: Session = Depends(get_db),
+    user: UserContext = Depends(get_current_user),
+) -> GraphEdgeCreate:
+    chapter = (
+        db.query(Chapter)
+        .filter(Chapter.book_id == book_id, Chapter.chapter_id == chapter_id)
+        .first()
+    )
+    if not chapter:
+        raise HTTPException(status_code=404, detail="Chapter not found.")
+    book = db.get(Book, book_id)
+    if not book or book.user_id != user.user_id:
+        raise HTTPException(status_code=404, detail="Book not found.")
+
+    graph_row = _get_editable_graph(db, chapter)
+    graph_json = graph_row.graph_json
+    edge = next((item for item in graph_json["edges"] if item.get("id") == edge_id), None)
+    if not edge:
+        raise HTTPException(status_code=404, detail="Edge not found.")
+
+    if payload.source is not None:
+        edge["source"] = payload.source
+    if payload.target is not None:
+        edge["target"] = payload.target
+    if payload.relation is not None:
+        edge["relation"] = payload.relation
+    if payload.evidence is not None:
+        edge["evidence"] = payload.evidence
+    if payload.confidence is not None:
+        edge["confidence"] = payload.confidence
+    if "source_text_location" in payload.__fields_set__:
+        edge["source_text_location"] = payload.source_text_location
+
+    db.commit()
+    return GraphEdgeCreate(**edge)
+
+
+@router.delete(
+    "/{book_id}/chapters/{chapter_id}/graph/edges/{edge_id}",
+    response_model=dict,
+)
+def delete_graph_edge(
+    book_id: str,
+    chapter_id: str,
+    edge_id: str,
+    db: Session = Depends(get_db),
+    user: UserContext = Depends(get_current_user),
+) -> dict:
+    chapter = (
+        db.query(Chapter)
+        .filter(Chapter.book_id == book_id, Chapter.chapter_id == chapter_id)
+        .first()
+    )
+    if not chapter:
+        raise HTTPException(status_code=404, detail="Chapter not found.")
+    book = db.get(Book, book_id)
+    if not book or book.user_id != user.user_id:
+        raise HTTPException(status_code=404, detail="Book not found.")
+
+    graph_row = _get_editable_graph(db, chapter)
+    graph_json = graph_row.graph_json
+
+    before = len(graph_json.get("edges", []))
+    graph_json["edges"] = [
+        edge for edge in graph_json.get("edges", []) if edge.get("id") != edge_id
+    ]
+    if len(graph_json["edges"]) == before:
+        raise HTTPException(status_code=404, detail="Edge not found.")
+    db.commit()
+    return {"ok": True, "edge_id": edge_id}
 
 
 # 获取原始 PDF（内联预览）
@@ -350,6 +660,56 @@ def get_book_pdf(
         )
     }
     return FileResponse(book.pdf_path, media_type="application/pdf", headers=headers)
+
+
+@router.delete("/{book_id}")
+def delete_book(
+    book_id: str,
+    db: Session = Depends(get_db),
+    user: UserContext = Depends(get_current_user),
+) -> dict:
+    book = db.get(Book, book_id)
+    if not book or not _can_access_book(db, book, user):
+        raise HTTPException(status_code=404, detail="Book not found.")
+
+    chapter_ids = [
+        row.id
+        for row in db.query(Chapter.id).filter(Chapter.book_id == book_id).all()
+    ]
+    if chapter_ids:
+        db.query(Chunk).filter(Chunk.chapter_id.in_(chapter_ids)).delete(
+            synchronize_session=False
+        )
+        db.query(ChapterGraph).filter(ChapterGraph.chapter_id.in_(chapter_ids)).delete(
+            synchronize_session=False
+        )
+    db.query(Chapter).filter(Chapter.book_id == book_id).delete(synchronize_session=False)
+    db.query(LLMUsageEvent).filter(
+        LLMUsageEvent.book_id == book_id, LLMUsageEvent.user_id == user.user_id
+    ).delete(synchronize_session=False)
+    db.query(PublicBookFavorite).filter(PublicBookFavorite.book_id == book_id).delete(
+        synchronize_session=False
+    )
+    db.query(PublicBookRepost).filter(PublicBookRepost.book_id == book_id).delete(
+        synchronize_session=False
+    )
+    db.query(PublicBook).filter(PublicBook.id == book_id).delete(
+        synchronize_session=False
+    )
+    db.delete(book)
+    db.commit()
+
+    book_dir = os.path.join(settings.data_dir, "books", book_id)
+    if os.path.isdir(book_dir):
+        shutil.rmtree(book_dir, ignore_errors=True)
+    for path in [book.pdf_path, book.md_path]:
+        if path and os.path.isfile(path):
+            try:
+                os.remove(path)
+            except OSError:
+                pass
+
+    return {"ok": True, "book_id": book_id}
 
 
 @router.post("/{book_id}/publish", response_model=PublicBookOut)

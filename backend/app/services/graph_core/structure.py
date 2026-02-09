@@ -7,6 +7,47 @@ import re
 from typing import List, Dict, Any
 
 
+_KEEP_TITLES = {"目录", "前言", "序言", "引言", "绪论", "序"}
+_EXCLUDE_KEYWORDS = [
+    "版权",
+    "版权页",
+    "版权声明",
+    "版权信息",
+    "版权说明",
+    "扉页",
+    "封面",
+    "封底",
+    "书名页",
+    "出版信息",
+    "出版说明",
+    "印刷",
+    "版次",
+    "ISBN",
+    "责任编辑",
+    "前扉页",
+    "内封",
+    "献词",
+    "免责声明",
+]
+
+
+def _should_exclude_title(title: str) -> bool:
+    if not title:
+        return True
+    normalized = re.sub(r"\s+", "", title)
+    if not normalized:
+        return True
+    if normalized in _KEEP_TITLES:
+        return False
+    lowered = normalized.lower()
+    if "copyright" in lowered or "allrightsreserved" in lowered:
+        return True
+    for keyword in _EXCLUDE_KEYWORDS:
+        if keyword in normalized:
+            return True
+    return False
+
+
 # 将章节标记转换为章节切片列表
 def _build_chapters_from_markers(markers: List[Dict[str, Any]], content: str) -> List[Dict[str, Any]]:
     parsed = []
@@ -16,9 +57,12 @@ def _build_chapters_from_markers(markers: List[Dict[str, Any]], content: str) ->
             end_index = int(markers[i + 1]["start"])
         else:
             end_index = len(content)
+        title = str(marker["title"]).strip()
+        if _should_exclude_title(title):
+            continue
         parsed.append(
             {
-                "title": marker["title"],
+                "title": title,
                 "level": marker.get("level", 1),
                 "start_char": start_index,
                 "end_char": end_index,
@@ -94,6 +138,8 @@ def _extract_toc_from_directory(pdf_path: str, max_pages: int = 6) -> List[Dict[
             if not match:
                 continue
             title = match.group(1).strip()
+            if _should_exclude_title(title):
+                continue
             if len(title) < 2 or len(title) > 40:
                 continue
             page_index = max(0, int(match.group(2)) - 1)
@@ -173,6 +219,8 @@ def parse_markdown_structure(md_path: str, pdf_path: str | None = None) -> Dict[
             title = str(chapter["title"]).strip()
             if not title:
                 continue
+            if _should_exclude_title(title):
+                continue
             start_page = min(max(int(chapter["page"]), 0), page_count - 1)
             next_page = (
                 min(max(int(chapters[idx + 1]["page"]), 0), page_count)
@@ -223,6 +271,8 @@ def parse_markdown_structure(md_path: str, pdf_path: str | None = None) -> Dict[
     for i, match in enumerate(matches[start_idx:], start=start_idx):
         level = len(match.group(1)) # 1 or 2 or 3
         title = match.group(2).strip()
+        if _should_exclude_title(title):
+            continue
         start_index = match.start()
 
         # 结束索引是下一个标题的开始，或者是文件末尾

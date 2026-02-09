@@ -56,12 +56,45 @@ export interface KnowledgeGraph {
   chapter_id: string;
   nodes: { id: string; name: string; type: string }[];
   edges: {
+    id?: string;
     source: string;
     target: string;
     relation: string;
     evidence: string;
     confidence: number;
+    source_text_location?: string | null;
   }[];
+}
+
+export interface GraphNodeCreateInput {
+  id?: string;
+  name: string;
+  type: string;
+}
+
+export interface GraphNodeUpdateInput {
+  name?: string;
+  type?: string;
+}
+
+export interface GraphEdgeCreateInput {
+  id?: string;
+  source: string;
+  target: string;
+  relation: string;
+  evidence?: string;
+  confidence?: number;
+  source_text_location?: string | null;
+}
+
+export interface GraphEdgeUpdateInput {
+  id?: string;
+  source?: string;
+  target?: string;
+  relation?: string;
+  evidence?: string;
+  confidence?: number;
+  source_text_location?: string | null;
 }
 
 export async function uploadBook(file: File, bookType: string) {
@@ -137,6 +170,114 @@ export async function fetchChapterGraph(bookId: string, chapterId: string) {
     throw new Error(await res.text());
   }
   return (await res.json()) as KnowledgeGraph;
+}
+
+export async function createGraphNode(
+  bookId: string,
+  chapterId: string,
+  payload: GraphNodeCreateInput
+) {
+  const res = await authFetch(
+    `${API_BASE}/api/books/${bookId}/chapters/${chapterId}/graph/nodes`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    }
+  );
+  if (!res.ok) {
+    throw new Error(await res.text());
+  }
+  return res.json();
+}
+
+export async function updateGraphNode(
+  bookId: string,
+  chapterId: string,
+  nodeId: string,
+  payload: GraphNodeUpdateInput
+) {
+  const res = await authFetch(
+    `${API_BASE}/api/books/${bookId}/chapters/${chapterId}/graph/nodes/${nodeId}`,
+    {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    }
+  );
+  if (!res.ok) {
+    throw new Error(await res.text());
+  }
+  return res.json();
+}
+
+export async function deleteGraphNode(
+  bookId: string,
+  chapterId: string,
+  nodeId: string
+) {
+  const res = await authFetch(
+    `${API_BASE}/api/books/${bookId}/chapters/${chapterId}/graph/nodes/${nodeId}`,
+    { method: "DELETE" }
+  );
+  if (!res.ok) {
+    throw new Error(await res.text());
+  }
+  return res.json();
+}
+
+export async function createGraphEdge(
+  bookId: string,
+  chapterId: string,
+  payload: GraphEdgeCreateInput
+) {
+  const res = await authFetch(
+    `${API_BASE}/api/books/${bookId}/chapters/${chapterId}/graph/edges`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    }
+  );
+  if (!res.ok) {
+    throw new Error(await res.text());
+  }
+  return res.json();
+}
+
+export async function updateGraphEdge(
+  bookId: string,
+  chapterId: string,
+  edgeId: string,
+  payload: GraphEdgeUpdateInput
+) {
+  const res = await authFetch(
+    `${API_BASE}/api/books/${bookId}/chapters/${chapterId}/graph/edges/${edgeId}`,
+    {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    }
+  );
+  if (!res.ok) {
+    throw new Error(await res.text());
+  }
+  return res.json();
+}
+
+export async function deleteGraphEdge(
+  bookId: string,
+  chapterId: string,
+  edgeId: string
+) {
+  const res = await authFetch(
+    `${API_BASE}/api/books/${bookId}/chapters/${chapterId}/graph/edges/${edgeId}`,
+    { method: "DELETE" }
+  );
+  if (!res.ok) {
+    throw new Error(await res.text());
+  }
+  return res.json();
 }
 
 export async function fetchBookPdfUrl(bookId: string) {
@@ -239,20 +380,47 @@ export async function fetchPublicBooks(limit = 20, offset = 0) {
   return (await res.json()) as PublicBook[];
 }
 
+export async function publishBook(
+  bookId: string,
+  payload?: { title?: string; cover_url?: string }
+) {
+  const res = await authFetch(`${API_BASE}/api/books/${bookId}/publish`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload || {})
+  });
+  if (!res.ok) {
+    throw new Error(await res.text());
+  }
+  return res.json();
+}
+
+export async function unpublishBook(bookId: string) {
+  const res = await authFetch(`${API_BASE}/api/books/${bookId}/publish`, {
+    method: "DELETE"
+  });
+  if (!res.ok) {
+    throw new Error(await res.text());
+  }
+  return res.json();
+}
+
+export async function deleteBook(bookId: string) {
+  const res = await authFetch(`${API_BASE}/api/books/${bookId}`, {
+    method: "DELETE"
+  });
+  if (!res.ok) {
+    throw new Error(await res.text());
+  }
+  return res.json();
+}
+
 export async function fetchUserProfile() {
   const res = await authFetch(`${API_BASE}/api/user/me`);
   if (!res.ok) {
     throw new Error(await res.text());
   }
   return (await res.json()) as UserProfile;
-}
-
-export async function fetchUserBooks() {
-  const res = await authFetch(`${API_BASE}/api/user/books`);
-  if (!res.ok) {
-    throw new Error(await res.text());
-  }
-  return (await res.json()) as UserBook[];
 }
 
 export async function fetchUserUsage() {

@@ -38,6 +38,8 @@ class Settings(BaseSettings):
     llm_timeout_seconds: int = 60
     # 章节级最大 Token（用于切块策略阈值）
     llm_max_tokens: int = 30000
+    # 章节处理超时阈值（秒），超过会标记 TIMEOUT
+    chapter_processing_timeout_seconds: int = 900
     # 当前默认 LLM 提供方（qwen 或 gemini）
     llm_provider: str = "qwen"
     # Gemini API Key（使用 Google Gemini 时必填）
