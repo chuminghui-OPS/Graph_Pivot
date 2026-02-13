@@ -67,6 +67,7 @@ export function GraphView({
   const graphSnapshotRef = useRef<KnowledgeGraph | null>(null);
   const layoutStoppedRef = useRef(false);
   const lastChapterIdRef = useRef<string | null>(null);
+  const initialDimsRef = useRef<{ width: number; height: number } | null>(null);
   const layoutSeedRef = useRef<{
     chapterId: string;
     positions: Map<string, { x: number; y: number }>;
@@ -79,6 +80,18 @@ export function GraphView({
   const onCreateEdgeRef = useRef(onCreateEdge);
 
   const chapterId = graph?.chapter_id || graphSnapshotRef.current?.chapter_id || "";
+  const boardScale = 5;
+  const boardRangeFactor = (boardScale - 1) / 2;
+
+  const getDragRange = useCallback(
+    (width: number, height: number) => [
+      (initialDimsRef.current?.height ?? height) * boardRangeFactor,
+      (initialDimsRef.current?.width ?? width) * boardRangeFactor,
+      (initialDimsRef.current?.height ?? height) * boardRangeFactor,
+      (initialDimsRef.current?.width ?? width) * boardRangeFactor
+    ],
+    [boardRangeFactor]
+  );
 
   useEffect(() => {
     onSelectNodeRef.current = onSelectNode;
@@ -105,6 +118,12 @@ export function GraphView({
         width: Math.max(280, Math.floor(entry.contentRect.width)),
         height: Math.max(360, Math.floor(entry.contentRect.height))
       });
+      if (!initialDimsRef.current) {
+        initialDimsRef.current = {
+          width: Math.max(280, Math.floor(entry.contentRect.width)),
+          height: Math.max(360, Math.floor(entry.contentRect.height))
+        };
+      }
     });
     observer.observe(containerRef.current);
     return () => observer.disconnect();
@@ -234,8 +253,15 @@ export function GraphView({
       const nodes = graphInstance.getNodeData();
       nodes.forEach((node: any) => {
         const id = String(node.id);
-        const pos = graphInstance.getElementPosition(id);
-        if (pos && Number.isFinite(pos.x) && Number.isFinite(pos.y)) {
+        const pos = graphInstance.getElementPosition(id) as
+          | { x: number; y: number }
+          | [number, number];
+        if (Array.isArray(pos)) {
+          const [x, y] = pos;
+          if (Number.isFinite(x) && Number.isFinite(y)) {
+            positions.set(id, { x, y });
+          }
+        } else if (pos && Number.isFinite(pos.x) && Number.isFinite(pos.y)) {
           positions.set(id, { x: pos.x, y: pos.y });
         }
       });
@@ -327,6 +353,9 @@ export function GraphView({
     const initGraph = async () => {
       if (!containerRef.current) return;
       if (graphRef.current) return;
+      if (!initialDimsRef.current) {
+        initialDimsRef.current = { width: dims.width, height: dims.height };
+      }
       const [{ Graph: G6Graph, GraphEvent }, { Renderer }] = await Promise.all([
         import("@antv/g6"),
         import("@antv/g-canvas")
@@ -337,6 +366,8 @@ export function GraphView({
         width: dims.width,
         height: dims.height,
         renderer: () => new Renderer(),
+        autoFit: "center",
+        zoomRange: [1 / boardScale, 3],
         data: toG6Data(graphSnapshotRef.current || graph),
         layout: {
           type: "force",
@@ -381,7 +412,11 @@ export function GraphView({
             labelAutoRotate: true
           }
         },
-        behaviors: ["drag-canvas", "zoom-canvas", "drag-element"],
+        behaviors: [
+          { type: "drag-canvas", key: "drag-canvas", range: getDragRange(dims.width, dims.height) },
+          { type: "zoom-canvas", key: "zoom-canvas" },
+          "drag-element"
+        ],
         plugins: [
           {
             key: "contextmenu",
@@ -483,7 +518,7 @@ export function GraphView({
 
       graphRef.current = graphInstance;
       (graphInstance as any).render?.();
-      graphInstance.fitView?.();
+      graphInstance.fitCenter?.();
       runForceOnce(graphInstance);
     };
     initGraph();
@@ -499,8 +534,12 @@ export function GraphView({
     const graphInstance = graphRef.current;
     if (!graphInstance) return;
     graphInstance.setSize(dims.width, dims.height);
+    graphInstance.updateBehavior({
+      key: "drag-canvas",
+      range: getDragRange(dims.width, dims.height)
+    });
     graphInstance.draw();
-  }, [dims.width, dims.height]);
+  }, [dims.width, dims.height, getDragRange]);
 
   useEffect(() => {
     const graphInstance = graphRef.current;
