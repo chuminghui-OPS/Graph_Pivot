@@ -221,9 +221,9 @@ def extract_with_validation(
             result = _call_llm(text, provider_override, config_override, book_type)
             # 校验结构合法性
             validate(instance=result, schema=LLM_OUTPUT_SCHEMA)
-            # 控制输出规模，防止过大
-            result["entities"] = result.get("entities", [])[:10]
-            result["relations"] = result.get("relations", [])[:12]
+            # 硬截断实体/关系数量， prompt 控制密度
+            result["entities"] = result.get("entities", [])[:1000]
+            result["relations"] = result.get("relations", [])[:5000]
             return result
         except httpx.HTTPError as exc:
             # 记录错误并继续重试

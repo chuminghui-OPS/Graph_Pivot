@@ -65,6 +65,12 @@ export function GraphView({
   const graphRef = useRef<Graph | null>(null);
   const lodLevelRef = useRef<LodLevel>("full");
   const graphSnapshotRef = useRef<KnowledgeGraph | null>(null);
+  const layoutStoppedRef = useRef(false);
+  const lastChapterIdRef = useRef<string | null>(null);
+  const layoutSeedRef = useRef<{
+    chapterId: string;
+    positions: Map<string, { x: number; y: number }>;
+  } | null>(null);
   const [dims, setDims] = useState({ width: 300, height: 360 });
   const [isFullscreen, setIsFullscreen] = useState(false);
   const onSelectNodeRef = useRef(onSelectNode);
@@ -145,12 +151,120 @@ export function GraphView({
     }
   };
 
+  const hashOffset = (value: string) => {
+    let hash = 0;
+    for (let i = 0; i < value.length; i += 1) {
+      hash = (hash << 5) - hash + value.charCodeAt(i);
+      hash |= 0;
+    }
+    return ((hash % 1000) / 1000) * 2 - 1;
+  };
+
+  const buildClusterGrid = (kg: KnowledgeGraph, width: number, height: number) => {
+    const positions = new Map<string, { x: number; y: number }>();
+    const nodeIds = new Set(kg.nodes.map((node) => node.id));
+    const adjacency = new Map<string, Set<string>>();
+    kg.nodes.forEach((node) => adjacency.set(node.id, new Set()));
+    kg.edges.forEach((edge) => {
+      const sourceId = kg.nodes.find((n) => n.name === edge.source)?.id || edge.source;
+      const targetId = kg.nodes.find((n) => n.name === edge.target)?.id || edge.target;
+      if (!nodeIds.has(sourceId) || !nodeIds.has(targetId)) return;
+      adjacency.get(sourceId)?.add(targetId);
+      adjacency.get(targetId)?.add(sourceId);
+    });
+
+    const visited = new Set<string>();
+    const clusters: KnowledgeGraph["nodes"][] = [];
+    for (const node of kg.nodes) {
+      if (visited.has(node.id)) continue;
+      const stack = [node.id];
+      const clusterIds: string[] = [];
+      visited.add(node.id);
+      while (stack.length) {
+        const current = stack.pop() as string;
+        clusterIds.push(current);
+        adjacency.get(current)?.forEach((neighbor) => {
+          if (!visited.has(neighbor)) {
+            visited.add(neighbor);
+            stack.push(neighbor);
+          }
+        });
+      }
+      clusters.push(kg.nodes.filter((n) => clusterIds.includes(n.id)));
+    }
+
+    const groupList = clusters.map((group, idx) => [`cluster-${idx}`, group] as const);
+    const count = Math.max(1, groupList.length);
+    const cols = Math.ceil(Math.sqrt(count));
+    const rows = Math.ceil(count / cols);
+    const padding = 40;
+    const cellWidth = Math.max(160, (width - padding * 2) / cols);
+    const cellHeight = Math.max(140, (height - padding * 2) / rows);
+
+    groupList.forEach(([_, nodes], idx) => {
+      const col = idx % cols;
+      const row = Math.floor(idx / cols);
+      const centerX = padding + col * cellWidth + cellWidth / 2;
+      const centerY = padding + row * cellHeight + cellHeight / 2;
+      const localCount = nodes.length;
+      const localCols = Math.ceil(Math.sqrt(localCount));
+      const localRows = Math.ceil(localCount / localCols);
+      const spacing = Math.min(50, Math.max(26, cellWidth / (localCols + 1)));
+      const startX = centerX - ((localCols - 1) * spacing) / 2;
+      const startY = centerY - ((localRows - 1) * spacing) / 2;
+      nodes.forEach((node, localIndex) => {
+        const localCol = localIndex % localCols;
+        const localRow = Math.floor(localIndex / localCols);
+        const jitterX = hashOffset(node.id) * 6;
+        const jitterY = hashOffset(node.id + "y") * 6;
+        positions.set(node.id, {
+          x: startX + localCol * spacing + jitterX,
+          y: startY + localRow * spacing + jitterY
+        });
+      });
+    });
+    return positions;
+  };
+
+  const getCurrentPositions = () => {
+    const graphInstance = graphRef.current;
+    if (!graphInstance) return new Map<string, { x: number; y: number }>();
+    const positions = new Map<string, { x: number; y: number }>();
+    try {
+      const nodes = graphInstance.getNodeData();
+      nodes.forEach((node: any) => {
+        const id = String(node.id);
+        const pos = graphInstance.getElementPosition(id);
+        if (pos && Number.isFinite(pos.x) && Number.isFinite(pos.y)) {
+          positions.set(id, { x: pos.x, y: pos.y });
+        }
+      });
+    } catch {
+      // ignore layout read errors
+    }
+    return positions;
+  };
+
+  const getSeedPositions = (kg: KnowledgeGraph | null) => {
+    if (!kg) return new Map();
+    if (layoutSeedRef.current?.chapterId === kg.chapter_id) {
+      return layoutSeedRef.current.positions;
+    }
+    const positions = buildClusterGrid(kg, dims.width, dims.height);
+    layoutSeedRef.current = { chapterId: kg.chapter_id, positions };
+    return positions;
+  };
+
   const toG6Data = (kg: KnowledgeGraph | null) => {
     if (!kg) return { nodes: [], edges: [] };
     const nameToId = new Map(kg.nodes.map((node) => [node.name, node.id]));
+    const positions = getSeedPositions(kg);
+    const currentPositions = getCurrentPositions();
     return {
       nodes: kg.nodes.map((node) => ({
         id: node.id,
+        x: currentPositions.get(node.id)?.x ?? positions.get(node.id)?.x,
+        y: currentPositions.get(node.id)?.y ?? positions.get(node.id)?.y,
         data: {
           name: node.name,
           type: node.type,
@@ -191,6 +305,18 @@ export function GraphView({
     );
     graphInstance.draw();
   };
+
+  const runForceOnce = useCallback((graphInstance: Graph) => {
+    if (!graphInstance) return;
+    graphInstance.once("afterlayout", () => {
+      if (layoutStoppedRef.current) return;
+      layoutStoppedRef.current = true;
+      graphInstance.stopLayout();
+      graphInstance.setLayout({ type: "preset" });
+    });
+    graphInstance.setLayout({ type: "force", enableWorker: true });
+    graphInstance.layout?.();
+  }, []);
 
   useEffect(() => {
     graphSnapshotRef.current = graph;
@@ -358,6 +484,7 @@ export function GraphView({
       graphRef.current = graphInstance;
       (graphInstance as any).render?.();
       graphInstance.fitView?.();
+      runForceOnce(graphInstance);
     };
     initGraph();
     return () => {
@@ -380,9 +507,16 @@ export function GraphView({
     if (!graphInstance) return;
     graphInstance.setData(toG6Data(graph));
     graphInstance.draw();
+    const nextChapterId = graph?.chapter_id || "";
+    const prevChapterId = lastChapterIdRef.current;
+    lastChapterIdRef.current = nextChapterId || null;
+    if (nextChapterId && nextChapterId !== prevChapterId) {
+      layoutStoppedRef.current = false;
+      runForceOnce(graphInstance);
+    }
     lodLevelRef.current = "full";
     applyLodLevel("full");
-  }, [graph]);
+  }, [graph, runForceOnce]);
 
   const updateGraphSnapshot = useCallback(
     (next: KnowledgeGraph) => {

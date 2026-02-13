@@ -84,5 +84,5 @@ def build_prompt(text: str, book_type: str | None) -> str:
     prompt = catalog.prompts.get(normalized) or catalog.prompts.get(catalog.default)
     if not prompt:
         # Hard fallback to avoid crash if catalog missing.
-        return f"你是资深知识图谱抽取专家。\\n文本：\\n{text}\\n"
+        return f"你是资深知识图谱抽取专家（每章节产出不超过1000个实体）。\\n文本：\\n{text}\\n"
     return prompt.replace("{text}", text)
