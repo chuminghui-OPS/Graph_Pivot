@@ -340,7 +340,7 @@ export function GraphView({
       graphInstance.stopLayout();
       graphInstance.setLayout({ type: "preset" });
     });
-    graphInstance.setLayout({ type: "force", enableWorker: true });
+    graphInstance.setLayout({ type: "force", enableWorker: false });
     graphInstance.layout?.();
   }, []);
 
@@ -371,7 +371,7 @@ export function GraphView({
         data: toG6Data(graphSnapshotRef.current || graph),
         layout: {
           type: "force",
-          enableWorker: true
+          enableWorker: false
         },
         node: {
           type: "rect",
