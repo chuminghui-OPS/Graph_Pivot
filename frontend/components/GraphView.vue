@@ -137,6 +137,20 @@ const resolveEdgePayload = (edgeId: string): EditEdgePayload | null => {
   };
 };
 
+const readZoom = (evt?: { data?: { scale?: number } }) => {
+  if (typeof evt?.data?.scale === "number") {
+    return evt.data.scale;
+  }
+  const graphInstance = graphRef.value as any;
+  if (!graphInstance) return undefined;
+  try {
+    const zoom = graphInstance.getZoom?.();
+    return typeof zoom === "number" ? zoom : undefined;
+  } catch {
+    return undefined;
+  }
+};
+
 const applyLodLevel = (next: "hidden" | "simple" | "full") => {
   const graphInstance = graphRef.value;
   if (!graphInstance) return;
@@ -389,8 +403,9 @@ onMounted(async () => {
     if (evidence) emit("select-edge", evidence);
   });
 
-  graphInstance.on(GraphEvent.AFTER_TRANSFORM, () => {
-    const zoom = graphInstance.getZoom();
+  graphInstance.on(GraphEvent.AFTER_TRANSFORM, (evt: any) => {
+    const zoom = readZoom(evt);
+    if (typeof zoom !== "number") return;
     const nextLevel = zoom < 0.5 ? "hidden" : zoom > 0.8 ? "full" : "simple";
     if (lodLevel.value !== nextLevel) {
       lodLevel.value = nextLevel;

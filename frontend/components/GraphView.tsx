@@ -131,6 +131,20 @@ export function GraphView({
     };
   };
 
+  const readZoom = (evt?: { data?: { scale?: number } }) => {
+    if (typeof evt?.data?.scale === "number") {
+      return evt.data.scale;
+    }
+    const graphInstance = graphRef.current;
+    if (!graphInstance) return undefined;
+    try {
+      const zoom = (graphInstance as any).getZoom?.();
+      return typeof zoom === "number" ? zoom : undefined;
+    } catch {
+      return undefined;
+    }
+  };
+
   const toG6Data = (kg: KnowledgeGraph | null) => {
     if (!kg) return { nodes: [], edges: [] };
     const nameToId = new Map(kg.nodes.map((node) => [node.name, node.id]));
@@ -330,8 +344,9 @@ export function GraphView({
         if (evidence) onSelectEdgeRef.current(evidence);
       });
 
-      graphInstance.on(GraphEvent.AFTER_TRANSFORM, () => {
-        const zoom = graphInstance.getZoom();
+      graphInstance.on(GraphEvent.AFTER_TRANSFORM, (evt: any) => {
+        const zoom = readZoom(evt);
+        if (typeof zoom !== "number") return;
         const nextLevel: LodLevel =
           zoom < 0.5 ? "hidden" : zoom > 0.8 ? "full" : "simple";
         if (lodLevelRef.current !== nextLevel) {
