@@ -67,7 +67,6 @@ export function GraphView({
   const graphSnapshotRef = useRef<KnowledgeGraph | null>(null);
   const layoutStoppedRef = useRef(false);
   const lastChapterIdRef = useRef<string | null>(null);
-  const initialDimsRef = useRef<{ width: number; height: number } | null>(null);
   const layoutSeedRef = useRef<{
     chapterId: string;
     positions: Map<string, { x: number; y: number }>;
@@ -80,17 +79,26 @@ export function GraphView({
   const onCreateEdgeRef = useRef(onCreateEdge);
 
   const chapterId = graph?.chapter_id || graphSnapshotRef.current?.chapter_id || "";
-  const boardScale = 5;
-  const boardRangeFactor = (boardScale - 1) / 2;
+  const boardCapacity = 1000;
+  const boardCell = 140;
+  const boardSize = Math.ceil(Math.sqrt(boardCapacity)) * boardCell;
 
   const getDragRange = useCallback(
     (width: number, height: number) => [
-      (initialDimsRef.current?.height ?? height) * boardRangeFactor,
-      (initialDimsRef.current?.width ?? width) * boardRangeFactor,
-      (initialDimsRef.current?.height ?? height) * boardRangeFactor,
-      (initialDimsRef.current?.width ?? width) * boardRangeFactor
+      Math.max(0, (boardSize - height) / 2),
+      Math.max(0, (boardSize - width) / 2),
+      Math.max(0, (boardSize - height) / 2),
+      Math.max(0, (boardSize - width) / 2)
     ],
-    [boardRangeFactor]
+    [boardSize]
+  );
+
+  const getZoomRange = useCallback(
+    (width: number, height: number) => {
+      const minZoom = Math.min(1, Math.min(width / boardSize, height / boardSize));
+      return [Math.max(0.1, minZoom), 3] as [number, number];
+    },
+    [boardSize]
   );
 
   useEffect(() => {
@@ -118,12 +126,6 @@ export function GraphView({
         width: Math.max(280, Math.floor(entry.contentRect.width)),
         height: Math.max(360, Math.floor(entry.contentRect.height))
       });
-      if (!initialDimsRef.current) {
-        initialDimsRef.current = {
-          width: Math.max(280, Math.floor(entry.contentRect.width)),
-          height: Math.max(360, Math.floor(entry.contentRect.height))
-        };
-      }
     });
     observer.observe(containerRef.current);
     return () => observer.disconnect();
@@ -216,9 +218,11 @@ export function GraphView({
     const count = Math.max(1, groupList.length);
     const cols = Math.ceil(Math.sqrt(count));
     const rows = Math.ceil(count / cols);
-    const padding = 40;
-    const cellWidth = Math.max(160, (width - padding * 2) / cols);
-    const cellHeight = Math.max(140, (height - padding * 2) / rows);
+    const padding = 80;
+    const canvasWidth = Math.max(width, boardSize);
+    const canvasHeight = Math.max(height, boardSize);
+    const cellWidth = Math.max(280, (canvasWidth - padding * 2) / cols);
+    const cellHeight = Math.max(240, (canvasHeight - padding * 2) / rows);
 
     groupList.forEach(([_, nodes], idx) => {
       const col = idx % cols;
@@ -228,7 +232,7 @@ export function GraphView({
       const localCount = nodes.length;
       const localCols = Math.ceil(Math.sqrt(localCount));
       const localRows = Math.ceil(localCount / localCols);
-      const spacing = Math.min(50, Math.max(26, cellWidth / (localCols + 1)));
+      const spacing = Math.min(150, Math.max(120, cellWidth / (localCols + 1)));
       const startX = centerX - ((localCols - 1) * spacing) / 2;
       const startY = centerY - ((localRows - 1) * spacing) / 2;
       nodes.forEach((node, localIndex) => {
@@ -276,7 +280,7 @@ export function GraphView({
     if (layoutSeedRef.current?.chapterId === kg.chapter_id) {
       return layoutSeedRef.current.positions;
     }
-    const positions = buildClusterGrid(kg, dims.width, dims.height);
+    const positions = buildClusterGrid(kg, boardSize, boardSize);
     layoutSeedRef.current = { chapterId: kg.chapter_id, positions };
     return positions;
   };
@@ -340,9 +344,21 @@ export function GraphView({
       graphInstance.stopLayout();
       graphInstance.setLayout({ type: "preset" });
     });
-    graphInstance.setLayout({ type: "force", enableWorker: true });
+    graphInstance.setLayout({
+      type: "force",
+      enableWorker: true,
+      width: boardSize,
+      height: boardSize,
+      center: [boardSize / 2, boardSize / 2],
+      preventOverlap: true,
+      nodeSize: 160,
+      nodeSpacing: 24,
+      collideStrength: 1,
+      linkDistance: 240,
+      gravity: 5
+    });
     graphInstance.layout?.();
-  }, []);
+  }, [boardSize]);
 
   useEffect(() => {
     graphSnapshotRef.current = graph;
@@ -353,9 +369,6 @@ export function GraphView({
     const initGraph = async () => {
       if (!containerRef.current) return;
       if (graphRef.current) return;
-      if (!initialDimsRef.current) {
-        initialDimsRef.current = { width: dims.width, height: dims.height };
-      }
       const [{ Graph: G6Graph, GraphEvent }, { Renderer }] = await Promise.all([
         import("@antv/g6"),
         import("@antv/g-canvas")
@@ -367,7 +380,7 @@ export function GraphView({
         height: dims.height,
         renderer: () => new Renderer(),
         autoFit: "center",
-        zoomRange: [1 / boardScale, 3],
+        zoomRange: getZoomRange(dims.width, dims.height),
         data: toG6Data(graphSnapshotRef.current || graph),
         layout: {
           type: "force",
@@ -538,8 +551,9 @@ export function GraphView({
       key: "drag-canvas",
       range: getDragRange(dims.width, dims.height)
     });
+    graphInstance.setZoomRange(getZoomRange(dims.width, dims.height));
     graphInstance.draw();
-  }, [dims.width, dims.height, getDragRange]);
+  }, [dims.width, dims.height, getDragRange, getZoomRange]);
 
   useEffect(() => {
     const graphInstance = graphRef.current;
