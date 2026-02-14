@@ -65,8 +65,9 @@ export function GraphView({
   const graphRef = useRef<Graph | null>(null);
   const lodLevelRef = useRef<LodLevel>("full");
   const graphSnapshotRef = useRef<KnowledgeGraph | null>(null);
-  const layoutStoppedRef = useRef(false);
+  const forceStopTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastChapterIdRef = useRef<string | null>(null);
+  const initializedChaptersRef = useRef<Set<string>>(new Set());
   const layoutSeedRef = useRef<{
     chapterId: string;
     positions: Map<string, { x: number; y: number }>;
@@ -77,6 +78,13 @@ export function GraphView({
   const onSelectEdgeRef = useRef(onSelectEdge);
   const onEditEdgeRef = useRef(onEditEdge);
   const onCreateEdgeRef = useRef(onCreateEdge);
+  const debugEnabledRef = useRef(false);
+
+  const debugLog = useCallback((...args: any[]) => {
+    if (!debugEnabledRef.current) return;
+    // eslint-disable-next-line no-console
+    console.log("[GraphDebug]", ...args);
+  }, []);
 
   const chapterId = graph?.chapter_id || graphSnapshotRef.current?.chapter_id || "";
   const boardCapacity = 1000;
@@ -100,6 +108,16 @@ export function GraphView({
     },
     [boardSize]
   );
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      const params = new URLSearchParams(window.location.search);
+      debugEnabledRef.current = params.get("graph_debug") === "1";
+    } catch {
+      debugEnabledRef.current = false;
+    }
+  }, []);
 
   useEffect(() => {
     onSelectNodeRef.current = onSelectNode;
@@ -291,18 +309,23 @@ export function GraphView({
     const positions = getSeedPositions(kg);
     const currentPositions = getCurrentPositions();
     return {
-      nodes: kg.nodes.map((node) => ({
-        id: node.id,
-        x: currentPositions.get(node.id)?.x ?? positions.get(node.id)?.x,
-        y: currentPositions.get(node.id)?.y ?? positions.get(node.id)?.y,
-        data: {
-          name: node.name,
-          type: node.type,
-          labelSimple: node.name,
-          labelFull: `${node.name} (${node.type})`,
-          lod: "full"
-        }
-      })),
+      nodes: kg.nodes.map((node) => {
+        const x = currentPositions.get(node.id)?.x ?? positions.get(node.id)?.x ?? boardSize / 2;
+        const y = currentPositions.get(node.id)?.y ?? positions.get(node.id)?.y ?? boardSize / 2;
+        return {
+          id: node.id,
+          x,
+          y,
+          style: { x, y },
+          data: {
+            name: node.name,
+            type: node.type,
+            labelSimple: node.name,
+            labelFull: `${node.name} (${node.type})`,
+            lod: "full"
+          }
+        };
+      }),
       edges: kg.edges.map((edge, index) => {
         const sourceId = nameToId.get(edge.source) || edge.source;
         const targetId = nameToId.get(edge.target) || edge.target;
@@ -336,29 +359,58 @@ export function GraphView({
     graphInstance.draw();
   };
 
-  const runForceOnce = useCallback((graphInstance: Graph) => {
+  const stopForceLayout = useCallback((graphInstance: Graph) => {
     if (!graphInstance) return;
-    graphInstance.once("afterlayout", () => {
-      if (layoutStoppedRef.current) return;
-      layoutStoppedRef.current = true;
-      graphInstance.stopLayout();
-      graphInstance.setLayout({ type: "preset" });
+    if (forceStopTimerRef.current) {
+      clearTimeout(forceStopTimerRef.current);
+      forceStopTimerRef.current = null;
+    }
+    graphInstance.stopLayout?.();
+    graphInstance.setLayout({ type: "preset" });
+    graphInstance.draw();
+  }, []);
+
+  const runForcePrelayoutOnce = useCallback((graphInstance: Graph, nextChapterId: string) => {
+    if (!graphInstance || !nextChapterId) return;
+    if (initializedChaptersRef.current.has(nextChapterId)) return;
+    initializedChaptersRef.current.add(nextChapterId);
+    debugLog("runForcePrelayoutOnce:start", {
+      chapterId: nextChapterId,
+      nodes: graphInstance.getNodeData?.().length || 0
     });
+
+    if (forceStopTimerRef.current) {
+      clearTimeout(forceStopTimerRef.current);
+      forceStopTimerRef.current = null;
+    }
+
     graphInstance.setLayout({
       type: "force",
-      enableWorker: true,
+      enableWorker: false,
       width: boardSize,
       height: boardSize,
       center: [boardSize / 2, boardSize / 2],
       preventOverlap: true,
       nodeSize: 160,
-      nodeSpacing: 24,
-      collideStrength: 1,
-      linkDistance: 240,
-      gravity: 5
+      nodeSpacing: 48,
+      collideStrength: 2,
+      linkDistance: 300,
+      gravity: 0.8
     });
     graphInstance.layout?.();
-  }, [boardSize]);
+    (graphInstance as any).render?.();
+    forceStopTimerRef.current = setTimeout(() => {
+      stopForceLayout(graphInstance);
+      const sample = graphInstance
+        .getNodeData?.()
+        ?.slice(0, 3)
+        ?.map((node: any) => ({
+          id: String(node.id),
+          pos: graphInstance.getElementPosition?.(String(node.id))
+        }));
+      debugLog("runForcePrelayoutOnce:stop", { chapterId: nextChapterId, sample });
+    }, 2200);
+  }, [boardSize, debugLog, stopForceLayout]);
 
   useEffect(() => {
     graphSnapshotRef.current = graph;
@@ -383,8 +435,7 @@ export function GraphView({
         zoomRange: getZoomRange(dims.width, dims.height),
         data: toG6Data(graphSnapshotRef.current || graph),
         layout: {
-          type: "force",
-          enableWorker: false
+          type: "preset"
         },
         node: {
           type: "rect",
@@ -530,13 +581,24 @@ export function GraphView({
       });
 
       graphRef.current = graphInstance;
+      if (typeof window !== "undefined" && debugEnabledRef.current) {
+        (window as any).__GRAPH_INSTANCE__ = graphInstance;
+      }
       (graphInstance as any).render?.();
       graphInstance.fitCenter?.();
-      runForceOnce(graphInstance);
+      debugLog("initGraph:rendered", {
+        chapterId: graphSnapshotRef.current?.chapter_id || graph?.chapter_id || "",
+        nodes: graphInstance.getNodeData?.().length || 0
+      });
+      runForcePrelayoutOnce(graphInstance, graphSnapshotRef.current?.chapter_id || graph?.chapter_id || "");
     };
     initGraph();
     return () => {
       cancelled = true;
+      if (forceStopTimerRef.current) {
+        clearTimeout(forceStopTimerRef.current);
+        forceStopTimerRef.current = null;
+      }
       graphRef.current?.destroy();
       graphRef.current = null;
       onGraphActions?.(null);
@@ -559,17 +621,21 @@ export function GraphView({
     const graphInstance = graphRef.current;
     if (!graphInstance) return;
     graphInstance.setData(toG6Data(graph));
-    graphInstance.draw();
+    (graphInstance as any).render?.();
+    debugLog("graph:setData", {
+      chapterId: graph?.chapter_id || "",
+      nodes: graph?.nodes?.length || 0,
+      edges: graph?.edges?.length || 0
+    });
     const nextChapterId = graph?.chapter_id || "";
     const prevChapterId = lastChapterIdRef.current;
     lastChapterIdRef.current = nextChapterId || null;
     if (nextChapterId && nextChapterId !== prevChapterId) {
-      layoutStoppedRef.current = false;
-      runForceOnce(graphInstance);
+      runForcePrelayoutOnce(graphInstance, nextChapterId);
     }
     lodLevelRef.current = "full";
     applyLodLevel("full");
-  }, [graph, runForceOnce]);
+  }, [graph, runForcePrelayoutOnce]);
 
   const updateGraphSnapshot = useCallback(
     (next: KnowledgeGraph) => {
@@ -578,7 +644,7 @@ export function GraphView({
       const graphInstance = graphRef.current;
       if (graphInstance) {
         graphInstance.setData(toG6Data(next));
-        graphInstance.draw();
+        (graphInstance as any).render?.();
       }
     },
     [onGraphChange]
