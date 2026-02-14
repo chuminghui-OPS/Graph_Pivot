@@ -264,7 +264,7 @@ def list_chapters(
     user: UserContext = Depends(get_current_user),
 ) -> ChapterListResponse:
     book = db.get(Book, book_id)
-    if not book or book.user_id != user.user_id:
+    if not book or not _can_access_book(db, book, user):
         raise HTTPException(status_code=404, detail="Book not found.")
     if book.status.startswith("failed:"):
         message = book.status.split(":", 1)[1] if ":" in book.status else "PDF 解析失败"
@@ -376,8 +376,9 @@ def get_chapter_graph(
     if not chapter:
         raise HTTPException(status_code=404, detail="Chapter not found.")
     book = db.get(Book, book_id)
-    if not book or book.user_id != user.user_id:
+    if not book or not _can_access_book(db, book, user):
         raise HTTPException(status_code=404, detail="Book not found.")
+
 
     # 取最新一条图谱记录
     graph_row = (

@@ -384,7 +384,7 @@ export function GraphView({
         data: toG6Data(graphSnapshotRef.current || graph),
         layout: {
           type: "force",
-          enableWorker: true
+          enableWorker: false
         },
         node: {
           type: "rect",
