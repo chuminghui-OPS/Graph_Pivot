@@ -11,18 +11,10 @@ from app.core.auth import UserContext, get_current_user
 from app.core.database import get_db
 from app.core.schemas import ApiAssetCreate, ApiAssetOut, ApiAssetUpdate, DiscoverModelsResponse
 from app.models import ApiAsset
-from app.utils.crypto import decrypt_value, encrypt_value
+from app.utils.crypto import decrypt_value, encrypt_value, mask_value
 
 
 router = APIRouter()
-
-
-def _mask(value: str) -> str:
-    if not value:
-        return ""
-    if len(value) <= 8:
-        return "*" * len(value)
-    return f"{value[:2]}***{value[-4:]}"
 
 
 def _discover_models_openai_compatible(base_url: str, api_path: str, api_key: str) -> list[str]:
@@ -86,7 +78,7 @@ def list_assets(
             name=row.name,
             provider=row.provider,
             api_mode=row.api_mode,
-            api_key_masked=_mask(decrypt_value(row.api_key)),
+            api_key_masked=mask_value(decrypt_value(row.api_key)),
             base_url=row.base_url,
             api_path=row.api_path,
             models=row.models,
@@ -126,7 +118,7 @@ def create_asset(
         name=row.name,
         provider=row.provider,
         api_mode=row.api_mode,
-        api_key_masked=_mask(api_key_plain),
+        api_key_masked=mask_value(api_key_plain),
         base_url=row.base_url,
         api_path=row.api_path,
         models=row.models,
@@ -162,7 +154,7 @@ def update_asset(
         name=row.name,
         provider=row.provider,
         api_mode=row.api_mode,
-        api_key_masked=_mask(api_key_plain or decrypt_value(row.api_key)),
+        api_key_masked=mask_value(api_key_plain or decrypt_value(row.api_key)),
         base_url=row.base_url,
         api_path=row.api_path,
         models=row.models,
@@ -221,7 +213,7 @@ def fetch_models(
         name=row.name,
         provider=row.provider,
         api_mode=row.api_mode,
-        api_key_masked=_mask(api_key_plain),
+        api_key_masked=mask_value(api_key_plain),
         base_url=row.base_url,
         api_path=row.api_path,
         models=row.models,

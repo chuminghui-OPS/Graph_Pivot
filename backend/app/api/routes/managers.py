@@ -10,18 +10,10 @@ from app.core.auth import UserContext, get_current_user
 from app.core.database import get_db
 from app.core.schemas import ApiManagerCreate, ApiManagerOut, ApiManagerUpdate
 from app.models import ApiManager
-from app.utils.crypto import encrypt_value
+from app.utils.crypto import encrypt_value, mask_value
 
 
 router = APIRouter()
-
-
-def _mask(value: str) -> str:
-    if not value:
-        return ""
-    if len(value) <= 6:
-        return "*" * len(value)
-    return f"{value[:2]}***{value[-4:]}"
 
 
 @router.get("", response_model=list[ApiManagerOut])
@@ -35,7 +27,7 @@ def list_managers(
             id=row.id,
             name=row.name,
             provider=row.provider,
-            api_key_masked=_mask(row.api_key_encrypted),
+            api_key_masked=mask_value(row.api_key_encrypted),
             base_url=row.base_url,
             model=row.model,
             created_at=row.created_at.isoformat() if row.created_at else None,
@@ -68,7 +60,7 @@ def create_manager(
         id=row.id,
         name=row.name,
         provider=row.provider,
-        api_key_masked=_mask(payload.api_key),
+        api_key_masked=mask_value(payload.api_key),
         base_url=row.base_url,
         model=row.model,
         created_at=row.created_at.isoformat(),
@@ -102,7 +94,7 @@ def update_manager(
         id=row.id,
         name=row.name,
         provider=row.provider,
-        api_key_masked=_mask(payload.api_key or row.api_key_encrypted),
+        api_key_masked=mask_value(payload.api_key or row.api_key_encrypted),
         base_url=row.base_url,
         model=row.model,
         created_at=row.created_at.isoformat() if row.created_at else None,

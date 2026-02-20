@@ -110,6 +110,22 @@ def _get_editable_graph(db: Session, chapter: Chapter) -> ChapterGraph:
     return graph_row
 
 
+def _get_chapter_and_book_for_edit(
+    db: Session, book_id: str, chapter_id: str, user: UserContext
+) -> tuple[Chapter, Book]:
+    chapter = (
+        db.query(Chapter)
+        .filter(Chapter.book_id == book_id, Chapter.chapter_id == chapter_id)
+        .first()
+    )
+    if not chapter:
+        raise HTTPException(status_code=404, detail="Chapter not found.")
+    book = db.get(Book, book_id)
+    if not book or book.user_id != user.user_id:
+        raise HTTPException(status_code=404, detail="Book not found.")
+    return chapter, book
+
+
 def _normalize_status(value: str) -> str:
     return _STATUS_MAP.get(value, value)
 
@@ -407,17 +423,7 @@ def create_graph_node(
     db: Session = Depends(get_db),
     user: UserContext = Depends(get_current_user),
 ) -> GraphNodeCreate:
-    chapter = (
-        db.query(Chapter)
-        .filter(Chapter.book_id == book_id, Chapter.chapter_id == chapter_id)
-        .first()
-    )
-    if not chapter:
-        raise HTTPException(status_code=404, detail="Chapter not found.")
-    book = db.get(Book, book_id)
-    if not book or book.user_id != user.user_id:
-        raise HTTPException(status_code=404, detail="Book not found.")
-
+    chapter, book = _get_chapter_and_book_for_edit(db, book_id, chapter_id, user)
     graph_row = _get_editable_graph(db, chapter)
     graph_json = graph_row.graph_json
 
@@ -440,17 +446,7 @@ def update_graph_node(
     db: Session = Depends(get_db),
     user: UserContext = Depends(get_current_user),
 ) -> GraphNodeCreate:
-    chapter = (
-        db.query(Chapter)
-        .filter(Chapter.book_id == book_id, Chapter.chapter_id == chapter_id)
-        .first()
-    )
-    if not chapter:
-        raise HTTPException(status_code=404, detail="Chapter not found.")
-    book = db.get(Book, book_id)
-    if not book or book.user_id != user.user_id:
-        raise HTTPException(status_code=404, detail="Book not found.")
-
+    chapter, book = _get_chapter_and_book_for_edit(db, book_id, chapter_id, user)
     graph_row = _get_editable_graph(db, chapter)
     graph_json = graph_row.graph_json
     node = next((item for item in graph_json["nodes"] if item.get("id") == node_id), None)
@@ -485,17 +481,7 @@ def delete_graph_node(
     db: Session = Depends(get_db),
     user: UserContext = Depends(get_current_user),
 ) -> dict:
-    chapter = (
-        db.query(Chapter)
-        .filter(Chapter.book_id == book_id, Chapter.chapter_id == chapter_id)
-        .first()
-    )
-    if not chapter:
-        raise HTTPException(status_code=404, detail="Chapter not found.")
-    book = db.get(Book, book_id)
-    if not book or book.user_id != user.user_id:
-        raise HTTPException(status_code=404, detail="Book not found.")
-
+    chapter, book = _get_chapter_and_book_for_edit(db, book_id, chapter_id, user)
     graph_row = _get_editable_graph(db, chapter)
     graph_json = graph_row.graph_json
 
@@ -526,17 +512,7 @@ def create_graph_edge(
     db: Session = Depends(get_db),
     user: UserContext = Depends(get_current_user),
 ) -> GraphEdgeCreate:
-    chapter = (
-        db.query(Chapter)
-        .filter(Chapter.book_id == book_id, Chapter.chapter_id == chapter_id)
-        .first()
-    )
-    if not chapter:
-        raise HTTPException(status_code=404, detail="Chapter not found.")
-    book = db.get(Book, book_id)
-    if not book or book.user_id != user.user_id:
-        raise HTTPException(status_code=404, detail="Book not found.")
-
+    chapter, book = _get_chapter_and_book_for_edit(db, book_id, chapter_id, user)
     graph_row = _get_editable_graph(db, chapter)
     graph_json = graph_row.graph_json
 
@@ -567,17 +543,7 @@ def update_graph_edge(
     db: Session = Depends(get_db),
     user: UserContext = Depends(get_current_user),
 ) -> GraphEdgeCreate:
-    chapter = (
-        db.query(Chapter)
-        .filter(Chapter.book_id == book_id, Chapter.chapter_id == chapter_id)
-        .first()
-    )
-    if not chapter:
-        raise HTTPException(status_code=404, detail="Chapter not found.")
-    book = db.get(Book, book_id)
-    if not book or book.user_id != user.user_id:
-        raise HTTPException(status_code=404, detail="Book not found.")
-
+    chapter, book = _get_chapter_and_book_for_edit(db, book_id, chapter_id, user)
     graph_row = _get_editable_graph(db, chapter)
     graph_json = graph_row.graph_json
     edge = next((item for item in graph_json["edges"] if item.get("id") == edge_id), None)
@@ -612,17 +578,7 @@ def delete_graph_edge(
     db: Session = Depends(get_db),
     user: UserContext = Depends(get_current_user),
 ) -> dict:
-    chapter = (
-        db.query(Chapter)
-        .filter(Chapter.book_id == book_id, Chapter.chapter_id == chapter_id)
-        .first()
-    )
-    if not chapter:
-        raise HTTPException(status_code=404, detail="Chapter not found.")
-    book = db.get(Book, book_id)
-    if not book or book.user_id != user.user_id:
-        raise HTTPException(status_code=404, detail="Book not found.")
-
+    chapter, book = _get_chapter_and_book_for_edit(db, book_id, chapter_id, user)
     graph_row = _get_editable_graph(db, chapter)
     graph_json = graph_row.graph_json
 

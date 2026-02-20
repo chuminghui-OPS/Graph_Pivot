@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -11,8 +13,14 @@ from app.core.config import settings
 from app.core.database import init_db
 
 
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    init_db()
+    yield
+
+
 # 应用入口：初始化 FastAPI 实例
-app = FastAPI(title="Graph Pivot", root_path=settings.root_path or "")
+app = FastAPI(title="Graph Pivot", root_path=settings.root_path or "", lifespan=lifespan)
 
 # 配置 CORS，允许前端访问后端 API
 app.add_middleware(
@@ -36,9 +44,3 @@ app.include_router(book_types.router, prefix=f"{api_prefix}/book-types", tags=["
 app.include_router(settings_routes.router, prefix=f"{api_prefix}/settings", tags=["settings"])
 app.include_router(public_books_routes.router, prefix=f"{api_prefix}/public", tags=["public"])
 app.include_router(admin_routes.router, prefix=f"{api_prefix}/admin", tags=["admin"])
-
-
-# 启动事件：创建数据库表结构
-@app.on_event("startup")
-def on_startup() -> None:
-    init_db()

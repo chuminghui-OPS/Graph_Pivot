@@ -30,3 +30,12 @@ def decrypt_value(value: str) -> str:
     except Exception:
         # Backward-compat: older rows may store plaintext when encryption was not enabled.
         return value
+
+
+def mask_value(value: str) -> str:
+    """将 API Key 等敏感字符串脱敏，仅保留首尾少量字符。"""
+    if not value:
+        return ""
+    if len(value) <= 8:
+        return "*" * len(value)
+    return f"{value[:2]}***{value[-4:]}"

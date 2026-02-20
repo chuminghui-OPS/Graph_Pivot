@@ -25,11 +25,6 @@ class LLMConfig(BaseModel):
     api_path: str | None = None
 
 
-# 生成 LLM 提示词（控制输出结构与重要性）
-def _build_prompt(text: str, book_type: str | None) -> str:
-    return build_prompt(text, book_type)
-
-
 # 当没有配置 LLM_KEY 时返回最小可运行结果
 def _stub_result(text: str) -> Dict[str, Any]:
     seed = re.findall(r"[A-Za-z0-9\u4e00-\u9fff]{2,}", text)
@@ -122,7 +117,7 @@ def _call_gemini(
     client = genai.Client(api_key=api_key or settings.gemini_api_key)
     response = client.models.generate_content(
         model=model or settings.gemini_model,
-        contents=_build_prompt(text, book_type),
+        contents=build_prompt(text, book_type),
     )
     content = response.text or ""
     return json.loads(_strip_json_fence(content))
@@ -152,7 +147,7 @@ def _call_openai_compatible(text: str, config: LLMConfig, book_type: str | None)
         "temperature": 0.1,
         "messages": [
             {"role": "system", "content": "Return only valid JSON."},
-            {"role": "user", "content": _build_prompt(text, book_type)},
+            {"role": "user", "content": build_prompt(text, book_type)},
         ],
         "response_format": {"type": "json_object"},
     }
