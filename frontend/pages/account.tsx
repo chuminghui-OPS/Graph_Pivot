@@ -540,7 +540,12 @@ function AccountPage() {
       {showModal ? (
         <div className="modal-backdrop">
           <div className="modal" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-title">添加模型提供方</div>
+            <div className="modal-header">
+              <div className="modal-title">添加模型提供方</div>
+              <Link href="/free-api-tutorials" className="tutorial-entry-btn">
+                获取免费API教程
+              </Link>
+            </div>
             <div className="detail-row">
               <label>名称</label>
               <input

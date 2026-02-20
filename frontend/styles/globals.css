@@ -1445,3 +1445,194 @@ body {
   font-weight: 600;
   font-size: 16px;
 }
+
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.tutorial-entry-btn {
+  text-decoration: none;
+  border: 1px solid rgba(15, 118, 110, 0.34);
+  border-radius: 999px;
+  padding: 6px 12px;
+  color: var(--accent);
+  background: rgba(15, 118, 110, 0.08);
+  font-size: 12px;
+  font-weight: 600;
+  transition: all 0.25s ease;
+}
+
+.tutorial-entry-btn:hover {
+  background: var(--accent);
+  color: #ffffff;
+  border-color: var(--accent);
+  box-shadow: 0 8px 18px rgba(15, 118, 110, 0.22);
+}
+
+.tutorial-entry-btn:active {
+  transform: translateY(1px);
+}
+
+.tutorial-page {
+  min-height: calc(100vh - var(--topbar-h));
+  display: grid;
+  grid-template-columns: 300px minmax(0, 1fr);
+}
+
+.tutorial-sidebar {
+  position: sticky;
+  top: var(--topbar-h);
+  height: calc(100vh - var(--topbar-h));
+  padding: 22px 16px;
+  border-right: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.75);
+  backdrop-filter: blur(8px);
+  overflow-y: auto;
+}
+
+.tutorial-sidebar-title {
+  font-size: 20px;
+  font-weight: 700;
+}
+
+.tutorial-sidebar-subtitle {
+  margin-top: 6px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.tutorial-nav-list {
+  margin-top: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.tutorial-nav-item {
+  border: 1px solid transparent;
+  border-radius: 10px;
+  background: #f8fafc;
+  color: var(--ink);
+  text-align: left;
+  cursor: pointer;
+  padding: 10px 12px;
+  font-size: 14px;
+  line-height: 1.4;
+  transition: all 0.25s ease;
+}
+
+.tutorial-nav-item:hover {
+  border-color: rgba(15, 118, 110, 0.34);
+  background: rgba(15, 118, 110, 0.06);
+}
+
+.tutorial-nav-item.active {
+  border-color: var(--accent);
+  background: rgba(15, 118, 110, 0.16);
+  color: #0b4a45;
+  font-weight: 600;
+}
+
+.tutorial-main {
+  min-width: 0;
+  padding: 30px 32px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.tutorial-header {
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.tutorial-title {
+  margin: 0;
+  font-size: clamp(28px, 3vw, 36px);
+  line-height: 1.15;
+}
+
+.tutorial-meta {
+  margin-top: 8px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.tutorial-content {
+  margin-right: auto;
+  width: min(100%, 980px);
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow);
+  padding: 24px 28px;
+}
+
+.tutorial-content h1,
+.tutorial-content h2,
+.tutorial-content h3 {
+  font-family: "Space Grotesk", system-ui, sans-serif;
+  line-height: 1.28;
+}
+
+.tutorial-content h1 {
+  font-size: 30px;
+}
+
+.tutorial-content h2 {
+  margin-top: 1.4em;
+  font-size: 24px;
+}
+
+.tutorial-content p,
+.tutorial-content li {
+  font-size: 16px;
+  line-height: 1.72;
+}
+
+.tutorial-content pre {
+  background: #111827;
+  color: #f9fafb;
+  border-radius: 10px;
+  padding: 12px 14px;
+  overflow-x: auto;
+}
+
+.tutorial-content code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+}
+
+.tutorial-content img {
+  max-width: 100%;
+  height: auto;
+  display: block;
+  margin: 14px auto;
+  border-radius: 8px;
+}
+
+@media (max-width: 1024px) {
+  .tutorial-page {
+    grid-template-columns: 1fr;
+  }
+
+  .tutorial-sidebar {
+    position: relative;
+    top: 0;
+    height: auto;
+    border-right: none;
+    border-bottom: 1px solid var(--border);
+  }
+}
+
+@media (max-width: 768px) {
+  .tutorial-main {
+    padding: 16px;
+  }
+
+  .tutorial-content {
+    padding: 18px;
+  }
+}
