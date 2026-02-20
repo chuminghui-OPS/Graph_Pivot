@@ -122,15 +122,18 @@ def _call_gemini(
     content = response.text or ""
     return json.loads(_strip_json_fence(content))
 
-# 估算文本 token 数量（优先使用 tiktoken）
-def estimate_tokens(text: str) -> int:
-    try:
-        import tiktoken
+# 估算文本 token 数量（优先使用 tiktoken，缓存 encoding 对象）
+_tiktoken_encoding = None
 
-        encoding = tiktoken.get_encoding("cl100k_base")
-        return len(encoding.encode(text))
+
+def estimate_tokens(text: str) -> int:
+    global _tiktoken_encoding
+    try:
+        if _tiktoken_encoding is None:
+            import tiktoken
+            _tiktoken_encoding = tiktoken.get_encoding("cl100k_base")
+        return len(_tiktoken_encoding.encode(text))
     except Exception:
-        # 兜底：中文场景下约等于字符数
         return len(text)
 
 

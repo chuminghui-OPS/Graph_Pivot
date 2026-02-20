@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from uuid import uuid4
 
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.models import Statistics
@@ -36,7 +37,19 @@ def _get_or_create(
         updated_at=datetime.utcnow(),
     )
     db.add(row)
-    db.flush()
+    try:
+        db.flush()
+    except IntegrityError:
+        db.rollback()
+        row = (
+            db.query(Statistics)
+            .filter(
+                Statistics.metric == metric,
+                Statistics.book_type == book_type,
+                Statistics.provider == provider,
+            )
+            .first()
+        )
     return row
 
 

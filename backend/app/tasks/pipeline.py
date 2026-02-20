@@ -11,6 +11,7 @@ from app.core.celery_app import celery_app
 from app.core.config import settings
 from app.core.database import SessionLocal
 from app.models import Book, Chapter, Chunk, ChapterGraph, LLMUsageEvent
+from app.services.book_status import update_book_status
 from app.services.chunk_service import count_text_units, split_evenly
 from app.services.graph_builder import build_chapter_graph
 from app.services.llm_service import extract_with_validation, LLMConfig, resolve_asset_config, estimate_tokens
@@ -53,26 +54,7 @@ def _pause_book(db, book_id: str) -> None:
 
 
 def _update_book_status(db, book_id: str) -> None:
-    remaining = (
-        db.query(Chapter)
-        .filter(Chapter.book_id == book_id, Chapter.status.in_(["PENDING", "PROCESSING"]))
-        .count()
-    )
-    if remaining:
-        return
-    any_failed = (
-        db.query(Chapter)
-        .filter(
-            Chapter.book_id == book_id,
-            Chapter.status.in_(["FAILED", "SKIPPED_TOO_LARGE", "TIMEOUT"]),
-        )
-        .count()
-        > 0
-    )
-    book = db.get(Book, book_id)
-    if book:
-        book.status = "failed" if any_failed else "done"
-        db.commit()
+    update_book_status(db, book_id)
 
 
 # Celery 任务：处理整本书（PDF->MD->章节入库）

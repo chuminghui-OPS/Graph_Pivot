@@ -43,6 +43,7 @@ from app.models import (
     PublicBookFavorite,
     PublicBookRepost,
 )
+from app.services.book_status import update_book_status
 from app.services.llm_service import get_llm_info
 from app.services.md_service import load_chapter_text
 from app.services.statistics import record_book_upload
@@ -131,26 +132,7 @@ def _normalize_status(value: str) -> str:
 
 
 def _refresh_book_status(db: Session, book_id: str) -> None:
-    remaining = (
-        db.query(Chapter)
-        .filter(Chapter.book_id == book_id, Chapter.status.in_(["PENDING", "PROCESSING"]))
-        .count()
-    )
-    if remaining:
-        return
-    any_failed = (
-        db.query(Chapter)
-        .filter(
-            Chapter.book_id == book_id,
-            Chapter.status.in_(["FAILED", "SKIPPED_TOO_LARGE", "TIMEOUT"]),
-        )
-        .count()
-        > 0
-    )
-    book = db.get(Book, book_id)
-    if book:
-        book.status = "failed" if any_failed else "done"
-        db.commit()
+    update_book_status(db, book_id)
 
 
 def _can_access_book(db: Session, book: Book, user: UserContext) -> bool:
@@ -230,22 +212,17 @@ def process_book(
     if not asset_id:
         raise HTTPException(status_code=400, detail="Asset id is required.")
 
-    if asset_id:
-        asset = db.get(ApiAsset, asset_id)
-        if not asset or asset.user_id != user.user_id:
-            raise HTTPException(status_code=404, detail="Asset not found.")
-        if not asset.models:
-            raise HTTPException(status_code=400, detail="Asset has no models configured.")
-        if not asset_model:
-            raise HTTPException(status_code=400, detail="Asset model is required.")
-        if asset_model not in asset.models:
-            raise HTTPException(status_code=400, detail="Asset model not in configured list.")
-        book.llm_asset_id = asset_id
-        book.llm_model = asset_model
-        provider = "custom"
-    else:
-        book.llm_asset_id = None
-        book.llm_model = None
+    asset = db.get(ApiAsset, asset_id)
+    if not asset or asset.user_id != user.user_id:
+        raise HTTPException(status_code=404, detail="Asset not found.")
+    if not asset.models:
+        raise HTTPException(status_code=400, detail="Asset has no models configured.")
+    if not asset_model:
+        raise HTTPException(status_code=400, detail="Asset model is required.")
+    if asset_model not in asset.models:
+        raise HTTPException(status_code=400, detail="Asset model not in configured list.")
+    book.llm_asset_id = asset_id
+    book.llm_model = asset_model
 
     BOOK_LLM_PROVIDER[book_id] = provider
     book.processing_started_at = datetime.utcnow()

@@ -131,6 +131,7 @@ export default function Home() {
   const [bookTypes, setBookTypes] = useState<BookType[]>(FALLBACK_BOOK_TYPES);
   const lastActivityRef = useRef<number>(Date.now());
   const heartbeatTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const activeChapterIdRef = useRef<string | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(true);
 
   const loadBookById = useCallback((id: string) => {
@@ -229,6 +230,10 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
+    activeChapterIdRef.current = activeChapterId;
+  }, [activeChapterId]);
+
+  useEffect(() => {
     const loadBookTypes = async () => {
       try {
         const types = await fetchBookTypes();
@@ -243,7 +248,7 @@ export default function Home() {
       }
     };
     loadBookTypes();
-  }, [bookType]);
+  }, []);
 
   const totalChapters = chapters.length;
   const doneCount = chapters.filter((chapter) => chapter.status === "DONE").length;
@@ -323,7 +328,7 @@ export default function Home() {
           tokensOut: data.tokens_out ?? 0
         });
         setRunError(data.last_error || null);
-        if (!activeChapterId && data.chapters.length > 0) {
+        if (!activeChapterIdRef.current && data.chapters.length > 0) {
           setActiveChapterId(data.chapters[0].chapter_id);
         }
         const hasProcessing = data.chapters.some((chapter) => chapter.status === "PROCESSING");
@@ -343,7 +348,7 @@ export default function Home() {
     return () => {
       if (timer) clearTimeout(timer);
     };
-  }, [bookId, activeChapterId]);
+  }, [bookId]);
 
   useEffect(() => {
     const loadAssets = async () => {

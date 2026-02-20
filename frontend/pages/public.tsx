@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/router";
 import {
@@ -32,26 +32,18 @@ export default function PublicBooksPage() {
 
   const publicBookIds = useMemo(() => new Set(books.map((book) => book.id)), [books]);
 
-  const loadPublicBooks = async () => {
-    const data = await fetchPublicBooks(50, 0);
-    setBooks(data);
-  };
+  const loadPublicBooks = useCallback(async () => {
+    try {
+      const data = await fetchPublicBooks(50, 0);
+      setBooks(data);
+    } catch (err: any) {
+      setError(err.message || "加载失败");
+    }
+  }, []);
 
   useEffect(() => {
-    let mounted = true;
-    const load = async () => {
-      try {
-        const data = await fetchPublicBooks(50, 0);
-        if (mounted) setBooks(data);
-      } catch (err: any) {
-        if (mounted) setError(err.message || "加载失败");
-      }
-    };
-    load();
-    return () => {
-      mounted = false;
-    };
-  }, []);
+    loadPublicBooks();
+  }, [loadPublicBooks]);
 
   useEffect(() => {
     let mounted = true;
