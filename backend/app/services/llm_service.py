@@ -98,6 +98,115 @@ def _get_retry_delay(exc: httpx.HTTPError, attempt: int) -> float:
             return min(30.0, 2.0 * (attempt + 1))
     return 0.0
 
+
+def _normalize_api_path(path: str | None, default_path: str) -> str:
+    resolved = (path or default_path).strip() or default_path
+    if not resolved.startswith("/"):
+        resolved = f"/{resolved}"
+    return resolved
+
+
+def _derive_responses_path(path: str | None) -> str:
+    resolved = _normalize_api_path(path, "/chat/completions")
+    if "/responses" in resolved:
+        return resolved
+    if "/chat/completions" in resolved:
+        return resolved.replace("/chat/completions", "/responses")
+    if resolved.startswith("/v1/"):
+        return "/v1/responses"
+    return "/responses"
+
+
+def _is_responses_path(path: str) -> bool:
+    return "/responses" in path
+
+
+def _join_text_chunks(chunks: list[dict[str, Any]]) -> str:
+    texts: list[str] = []
+    for chunk in chunks:
+        if not isinstance(chunk, dict):
+            continue
+        text = chunk.get("text")
+        if isinstance(text, str) and text.strip():
+            texts.append(text)
+    return "\n".join(texts).strip()
+
+
+def _extract_chat_content(data: dict[str, Any]) -> str:
+    choices = data.get("choices")
+    if not isinstance(choices, list) or not choices:
+        raise ValueError("Invalid chat response format: missing choices.")
+    first = choices[0] if isinstance(choices[0], dict) else {}
+    message = first.get("message") if isinstance(first.get("message"), dict) else {}
+    content = message.get("content")
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        joined = _join_text_chunks(content)
+        if joined:
+            return joined
+    raise ValueError("Invalid chat response format: missing message content.")
+
+
+def _extract_responses_content(data: dict[str, Any]) -> str:
+    output_text = data.get("output_text")
+    if isinstance(output_text, str) and output_text.strip():
+        return output_text
+
+    output = data.get("output")
+    if isinstance(output, list):
+        texts: list[str] = []
+        for item in output:
+            if not isinstance(item, dict):
+                continue
+            content = item.get("content")
+            if isinstance(content, list):
+                joined = _join_text_chunks(content)
+                if joined:
+                    texts.append(joined)
+        if texts:
+            return "\n".join(texts).strip()
+
+    # Some providers may still return chat-completions compatible body.
+    return _extract_chat_content(data)
+
+
+def _build_chat_payload(model: str, prompt: str) -> dict[str, Any]:
+    return {
+        "model": model,
+        "temperature": 0.1,
+        "messages": [
+            {"role": "system", "content": "Return only valid JSON."},
+            {"role": "user", "content": prompt},
+        ],
+        "response_format": {"type": "json_object"},
+    }
+
+
+def _build_responses_payload(model: str, prompt: str) -> dict[str, Any]:
+    return {
+        "model": model,
+        "temperature": 0.1,
+        "input": [
+            {"role": "system", "content": "Return only valid JSON."},
+            {"role": "user", "content": prompt},
+        ],
+    }
+
+
+def _should_fallback_to_responses(exc: httpx.HTTPStatusError) -> bool:
+    status = exc.response.status_code
+    if status not in (400, 404, 405):
+        return False
+    message = _extract_error_message(exc.response.text or "").lower()
+    fallback_hints = (
+        "unsupported legacy protocol",
+        "/v1/chat/completions is not supported",
+        "please use /v1/responses",
+        "use /v1/responses",
+    )
+    return any(hint in message for hint in fallback_hints)
+
 # 获取当前 LLM 提供方信息（供前端展示）
 def get_llm_info(provider_override: str | None = None) -> Dict[str, str]:
     provider = (provider_override or settings.llm_provider).lower()
@@ -144,24 +253,37 @@ def _call_openai_compatible(text: str, config: LLMConfig, book_type: str | None)
     if not config.api_key:
         return _stub_result(text)
     base_url = config.base_url or settings.llm_base_url
-    path = config.api_path or "/chat/completions"
-    url = f"{base_url.rstrip('/')}{path}"
+    path = _normalize_api_path(config.api_path, "/chat/completions")
     headers = {"Authorization": f"Bearer {config.api_key}"}
-    payload = {
-        "model": config.model or settings.llm_model,
-        "temperature": 0.1,
-        "messages": [
-            {"role": "system", "content": "Return only valid JSON."},
-            {"role": "user", "content": _build_prompt(text, book_type)},
-        ],
-        "response_format": {"type": "json_object"},
-    }
+    prompt = _build_prompt(text, book_type)
+    model = config.model or settings.llm_model
+
     with httpx.Client(timeout=settings.llm_timeout_seconds) as client:
-        response = client.post(url, headers=headers, json=payload)
-        response.raise_for_status()
-        data = response.json()
-        content = data["choices"][0]["message"]["content"]
-        return json.loads(_strip_json_fence(content))
+        if _is_responses_path(path):
+            url = f"{base_url.rstrip('/')}{path}"
+            response = client.post(url, headers=headers, json=_build_responses_payload(model, prompt))
+            response.raise_for_status()
+            data = response.json()
+            content = _extract_responses_content(data)
+            return json.loads(_strip_json_fence(content))
+
+        try:
+            chat_url = f"{base_url.rstrip('/')}{path}"
+            response = client.post(chat_url, headers=headers, json=_build_chat_payload(model, prompt))
+            response.raise_for_status()
+            data = response.json()
+            content = _extract_chat_content(data)
+            return json.loads(_strip_json_fence(content))
+        except httpx.HTTPStatusError as exc:
+            if not _should_fallback_to_responses(exc):
+                raise
+            response_path = _derive_responses_path(path)
+            response_url = f"{base_url.rstrip('/')}{response_path}"
+            retry = client.post(response_url, headers=headers, json=_build_responses_payload(model, prompt))
+            retry.raise_for_status()
+            data = retry.json()
+            content = _extract_responses_content(data)
+            return json.loads(_strip_json_fence(content))
 
 
 def _call_llm(

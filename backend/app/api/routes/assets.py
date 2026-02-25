@@ -27,7 +27,7 @@ def _mask(value: str) -> str:
 
 def _discover_models_openai_compatible(base_url: str, api_path: str, api_key: str) -> list[str]:
     # OpenAI-compatible: GET {base_url}/models
-    # If user configured api_path like "/v1/chat/completions", derive "/v1/models".
+    # If user configured api_path like "/v1/chat/completions" or "/v1/responses", derive "/v1/models".
     candidates: list[str] = []
     api_path = (api_path or "").strip()
     if api_path:
@@ -35,6 +35,8 @@ def _discover_models_openai_compatible(base_url: str, api_path: str, api_key: st
             api_path = f"/{api_path}"
         if "/chat/completions" in api_path:
             candidates.append(f"{base_url.rstrip('/')}{api_path.replace('/chat/completions', '/models')}")
+        if "/responses" in api_path:
+            candidates.append(f"{base_url.rstrip('/')}{api_path.replace('/responses', '/models')}")
     candidates.append(f"{base_url.rstrip('/')}/models")
     headers = {"Authorization": f"Bearer {api_key}"}
 
