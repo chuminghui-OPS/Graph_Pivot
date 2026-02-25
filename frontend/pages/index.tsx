@@ -265,21 +265,22 @@ export default function Home() {
   );
   const isParsing = (parseRequested && totalChapters === 0) || !!processingChapter;
   const shouldSpin = Boolean(bookId) && isParsing;
+  const ringValue = Math.max(0, Math.min(100, Math.round(progressPercent)));
   const selectedAsset = assets.find((item) => item.id === selectedAssetId) || null;
   const assetModels = selectedAsset?.models || [];
   const graphNodes = graph?.nodes || [];
 
   let progressLabel = "";
   if (bookId && totalChapters === 0 && parseRequested) {
-    progressLabel = "Generating MD...";
+    progressLabel = "正在生成 MD...";
   } else if (bookId && totalChapters === 0) {
-    progressLabel = "PDF uploaded. Click Start Parse to continue.";
+    progressLabel = "PDF 已上传，点击“开始解析”后开始处理";
   } else if (processingChapter) {
-    progressLabel = `Processing chapter ${processingIndex + 1}: ${processingChapter.title}`;
+    progressLabel = `正在处理第${processingIndex + 1}章：${processingChapter.title}`;
   } else if (allTerminal) {
-    progressLabel = hasFailures ? "Completed (some chapters failed)" : "Completed";
+    progressLabel = hasFailures ? "处理完成（部分章节异常）" : "全部完成";
   } else if (totalChapters > 0) {
-    progressLabel = "Waiting in queue...";
+    progressLabel = "等待处理中...";
   }
 
   useEffect(() => {
@@ -606,7 +607,7 @@ export default function Home() {
   const handleLoadBook = async () => {
     const trimmed = manualBookId.trim();
     if (!trimmed) {
-      setError("请输入 book_id");
+      setError("\u8bf7\u8f93\u5165 book_id");
       return;
     }
     loadBookById(trimmed);
@@ -614,15 +615,15 @@ export default function Home() {
 
   const handleStartParse = async () => {
     if (!bookId) {
-      setError("Please upload a PDF or load an existing book_id first.");
+      setError("请先上传 PDF 或加载已有 book_id");
       return;
     }
     if (!selectedAssetId) {
-      setError("Please configure an API asset in Account.");
+      setError("请先在个人中心配置 API 资产");
       return;
     }
     if (!selectedAssetModel) {
-      setError("Please select a model.");
+      setError("请先选择模型");
       return;
     }
     setStartingParse(true);
@@ -632,7 +633,7 @@ export default function Home() {
       await processBook(bookId, "custom", selectedAssetId, selectedAssetModel);
       setParseRequested(true);
     } catch (err: any) {
-      setError(err.message || "Failed to start parsing.");
+      setError(err.message || "启动解析失败");
     } finally {
       setStartingParse(false);
     }
@@ -783,7 +784,7 @@ export default function Home() {
           ) : null}
 
           <section className="control-grid">
-            <div className="panel control-card span-8">
+            <div className="panel control-card model-config-card span-5">
               <div className="panel-title spaced">
                 <div>
                   <div className="label-strong">模型配置</div>
@@ -837,67 +838,110 @@ export default function Home() {
                   )}
                 </select>
               </div>
+              </div>
+              <div className="panel status-card compact-status">
+                <div className="compact-status-head">
+                  <div
+                    className={`progress-ring ${shouldSpin ? "spinning" : ""}`}
+                    style={{
+                      background: `conic-gradient(var(--accent) ${ringValue}%, rgba(148, 163, 184, 0.25) 0)`
+                    }}
+                  >
+                    <div className="progress-ring-inner">{ringValue}%</div>
+                  </div>
+                  <div className="compact-status-info">
+                    <div className="compact-status-id">
+                      {bookId || "\u672a\u52a0\u8f7d book_id"}
+                    </div>
+                    <div className="compact-status-label">
+                      {progressLabel || "\u4e0a\u4f20 PDF \u540e\u70b9\u51fb\u201c\u5f00\u59cb\u89e3\u6790\u201d"}
+                    </div>
+                    <div className="compact-status-meta">
+                      {doneCount}/{totalChapters || 0} · Calls {usageSummary?.calls ?? 0} · Tokens{" "}
+                      {(usageSummary?.tokensIn ?? 0) + (usageSummary?.tokensOut ?? 0)}
+                    </div>
+                  </div>
+                </div>
+                {bookId ? (
+                  <div className="compact-status-actions">
+                    <button
+                      className="primary compact-publish"
+                      type="button"
+                      onClick={handlePublish}
+                      disabled={publishing}
+                    >
+                      {publishing ? "\u53d1\u5e03\u4e2d..." : "\u53d1\u5e03\u5230\u516c\u5171\u4e66\u5e93"}
+                    </button>
+                  </div>
+                ) : null}
+              </div>
             </div>
 
-            <div className="panel control-card span-4">
+            <div className="panel control-card upload-load-card span-7">
               <div className="panel-title spaced">
                 <div className="label-strong">书籍上传与加载</div>
                 <div className="muted">PDF 上传或直接加载已有 book_id</div>
               </div>
               <div className="form-grid">
-                <label className="field">
-                  <span>书籍类型</span>
-                  <select
-                    value={bookType}
-                    onChange={(event) => setBookType(event.target.value)}
-                  >
-                    {bookTypes.map((item) => (
-                      <option key={item.key} value={item.key}>
-                        {item.label}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label className="field">
-                  <span>上传 PDF</span>
-                  <input
-                    type="file"
-                    accept="application/pdf"
-                    onChange={handleUpload}
-                    disabled={uploading}
-                  />
-                </label>
-                <div className="parse-actions">
-                  <button
-                    className="primary"
-                    type="button"
-                    onClick={handleStartParse}
-                    disabled={startingParse || isParsing}
-                  >
-                    {startingParse || isParsing ? "Parsing..." : "Start Parse"}
-                  </button>
-                  <span className="muted parse-hint">
-                    {uploadedFileName
-                      ? `Uploaded: ${uploadedFileName}`
-                      : bookId
-                        ? "book_id loaded. Ready to parse."
-                        : "Upload a PDF or load a book_id first."}
-                  </span>
-                </div>
-                <label className="field">
-                  <span>已有 book_id</span>
-                  <div className="input-row">
+                <div className="split-block">
+                  <div className="split-block-title">导入新书</div>
+                  <label className="field">
+                    <span>书籍类型</span>
+                    <select
+                      value={bookType}
+                      onChange={(event) => setBookType(event.target.value)}
+                    >
+                      {bookTypes.map((item) => (
+                        <option key={item.key} value={item.key}>
+                          {item.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="field">
+                    <span>上传 PDF</span>
                     <input
-                      type="text"
-                      placeholder="输入已有 book_id"
-                      value={manualBookId}
-                      onChange={(event) => setManualBookId(event.target.value)}
+                      type="file"
+                      accept="application/pdf"
+                      onChange={handleUpload}
+                      disabled={uploading}
                     />
-                    <button className="primary" type="button" onClick={handleLoadBook}>
-                      加载
+                  </label>
+                  <div className="parse-actions">
+                    <button
+                      className="primary parse-start-btn"
+                      type="button"
+                      onClick={handleStartParse}
+                      disabled={startingParse || isParsing}
+                    >
+                      {startingParse || isParsing ? "解析中..." : "开始解析"}
                     </button>
+                    <span className="muted parse-hint">
+                      {uploadedFileName
+                        ? `已上传：${uploadedFileName}`
+                        : bookId
+                          ? "已加载 book_id，可开始解析"
+                          : "请先上传 PDF 或加载 book_id"}
+                    </span>
                   </div>
-                </label>
+                </div>
+                <div className="split-block">
+                  <div className="split-block-title">加载已有书籍</div>
+                  <label className="field">
+                    <span>已有 book_id</span>
+                    <div className="input-row">
+                      <input
+                        type="text"
+                        placeholder="输入已有 book_id"
+                        value={manualBookId}
+                        onChange={(event) => setManualBookId(event.target.value)}
+                      />
+                      <button className="primary" type="button" onClick={handleLoadBook}>
+                        加载
+                      </button>
+                    </div>
+                  </label>
+                </div>
                 <div className="input-row ghost-actions">
                   <button
                     className="ghost"
@@ -917,51 +961,6 @@ export default function Home() {
               </div>
             </div>
           </section>
-
-          {bookId ? (
-            <div className="panel status-card">
-              <div className="panel-title spaced">
-                <div className="status-title">
-                  <span
-                    className={`progress-spinner ${shouldSpin ? "spinning" : "paused"}`}
-                    aria-hidden="true"
-                  />
-                  <span className="label-strong">{Math.round(progressPercent)}%</span>
-                </div>
-                <div className="muted">{bookId}</div>
-              </div>
-              <div className="progress-track">
-                <div
-                  className="progress-fill"
-                  style={{
-                    width: `${progressPercent}%`,
-                    transitionDuration: `${progressSpeedMs}ms`
-                  }}
-                />
-              </div>
-              <div className="progress-meta">
-                <span>{doneCount}/{totalChapters || 0}</span>
-                <span className="progress-label">{progressLabel}</span>
-              </div>
-              {usageSummary ? (
-                <div className="progress-meta secondary">
-                  Tokens: {usageSummary.tokensIn + usageSummary.tokensOut}（in{" "}
-                  {usageSummary.tokensIn} / out {usageSummary.tokensOut}） · Calls{" "}
-                  {usageSummary.calls}
-                </div>
-              ) : null}
-              <div className="progress-actions">
-                <button
-                  className="primary"
-                  type="button"
-                  onClick={handlePublish}
-                  disabled={publishing}
-                >
-                  {publishing ? "发布中..." : "发布到公共书库"}
-                </button>
-              </div>
-            </div>
-          ) : null}
 
           <section className="workspace">
             <GraphView
