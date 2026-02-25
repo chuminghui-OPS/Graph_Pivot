@@ -105,6 +105,9 @@ export default function Home() {
   const [edgeSaving, setEdgeSaving] = useState(false);
   const graphActionsRef = useRef<GraphActions | null>(null);
   const [uploading, setUploading] = useState(false);
+  const [startingParse, setStartingParse] = useState(false);
+  const [parseRequested, setParseRequested] = useState(false);
+  const [uploadedFileName, setUploadedFileName] = useState<string>("");
   const [error, setError] = useState<string | null>(null);
   const [runError, setRunError] = useState<string | null>(null);
   const [usageSummary, setUsageSummary] = useState<{
@@ -135,6 +138,8 @@ export default function Home() {
 
   const loadBookById = useCallback((id: string) => {
     setError(null);
+    setParseRequested(false);
+    setUploadedFileName("");
     setBookId(id);
     setManualBookId(id);
     setChapters([]);
@@ -258,20 +263,23 @@ export default function Home() {
   const hasFailures = chapters.some((chapter) =>
     ["FAILED", "SKIPPED_TOO_LARGE", "TIMEOUT"].includes(chapter.status)
   );
-  const shouldSpin = Boolean(bookId) && (totalChapters === 0 || !!processingChapter);
+  const isParsing = (parseRequested && totalChapters === 0) || !!processingChapter;
+  const shouldSpin = Boolean(bookId) && isParsing;
   const selectedAsset = assets.find((item) => item.id === selectedAssetId) || null;
   const assetModels = selectedAsset?.models || [];
   const graphNodes = graph?.nodes || [];
 
   let progressLabel = "";
-  if (bookId && totalChapters === 0) {
-    progressLabel = "正在生成 MD...";
+  if (bookId && totalChapters === 0 && parseRequested) {
+    progressLabel = "Generating MD...";
+  } else if (bookId && totalChapters === 0) {
+    progressLabel = "PDF uploaded. Click Start Parse to continue.";
   } else if (processingChapter) {
-    progressLabel = `正在处理第${processingIndex + 1}章：${processingChapter.title}`;
+    progressLabel = `Processing chapter ${processingIndex + 1}: ${processingChapter.title}`;
   } else if (allTerminal) {
-    progressLabel = hasFailures ? "处理完成（部分章节异常）" : "全部完成";
+    progressLabel = hasFailures ? "Completed (some chapters failed)" : "Completed";
   } else if (totalChapters > 0) {
-    progressLabel = "等待处理中...";
+    progressLabel = "Waiting in queue...";
   }
 
   useEffect(() => {
@@ -328,8 +336,16 @@ export default function Home() {
         }
         const hasProcessing = data.chapters.some((chapter) => chapter.status === "PROCESSING");
         const hasPending = data.chapters.some((chapter) => chapter.status === "PENDING");
-        const hasActive = data.chapters.length === 0 || hasProcessing || hasPending;
-        if (hasActive) {
+        const hasAnyChapter = data.chapters.length > 0;
+        if (hasAnyChapter || hasProcessing || hasPending) {
+          setParseRequested(true);
+        }
+        if (data.last_error && !hasAnyChapter && !hasProcessing && !hasPending) {
+          setParseRequested(false);
+        }
+        const shouldKeepPolling =
+          hasProcessing || hasPending || (parseRequested && !hasAnyChapter && !data.last_error);
+        if (shouldKeepPolling) {
           const interval = hasProcessing
             ? POLL_INTERVAL_PROCESSING_MS
             : POLL_INTERVAL_PENDING_MS;
@@ -343,7 +359,7 @@ export default function Home() {
     return () => {
       if (timer) clearTimeout(timer);
     };
-  }, [bookId, activeChapterId]);
+  }, [bookId, activeChapterId, parseRequested]);
 
   useEffect(() => {
     const loadAssets = async () => {
@@ -389,7 +405,7 @@ export default function Home() {
       return;
     }
     const hasProcessing =
-      chapters.length === 0 ||
+      (parseRequested && chapters.length === 0) ||
       chapters.some(
         (chapter) => chapter.status === "PROCESSING" || chapter.status === "PENDING"
       );
@@ -421,7 +437,7 @@ export default function Home() {
         heartbeatTimerRef.current = null;
       }
     };
-  }, [bookId, chapters]);
+  }, [bookId, chapters, parseRequested]);
   useEffect(() => {
     if (!bookId) {
       if (progressTimerRef.current) {
@@ -437,7 +453,7 @@ export default function Home() {
       return;
     }
 
-    if (totalChapters === 0) {
+    if (totalChapters === 0 && parseRequested) {
       if (
         !progressMetaRef.current ||
         progressMetaRef.current.chapterId !== "__book__"
@@ -541,7 +557,7 @@ export default function Home() {
     } else {
       setProgressPercent(0);
     }
-  }, [bookId, processingChapter?.chapter_id, chapters, totalChapters, allTerminal]);
+  }, [bookId, processingChapter?.chapter_id, chapters, totalChapters, allTerminal, parseRequested]);
 
   useEffect(() => {
     if (!bookId || !activeChapterId) {
@@ -567,31 +583,18 @@ export default function Home() {
   const handleUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
-    if (!selectedAssetId) {
-      setError("请先在个人中心添加 API 资产，并选择模型");
-      event.target.value = "";
-      return;
-    }
-    if (!selectedAssetModel) {
-      setError("当前资产未配置可用模型，请先完善模型列表");
-      event.target.value = "";
-      return;
-    }
     setUploading(true);
     setError(null);
     try {
       const uploadResult = await uploadBook(file, bookType);
       setBookId(uploadResult.book_id);
+      setManualBookId(uploadResult.book_id);
+      setUploadedFileName(file.name);
+      setParseRequested(false);
       setChapters([]);
       setActiveChapterId(null);
       setGraph(null);
       setMarkdown("");
-      await processBook(
-        uploadResult.book_id,
-        "custom",
-        selectedAssetId,
-        selectedAssetModel
-      );
     } catch (err: any) {
       setError(err.message || "Upload failed");
     } finally {
@@ -607,6 +610,32 @@ export default function Home() {
       return;
     }
     loadBookById(trimmed);
+  };
+
+  const handleStartParse = async () => {
+    if (!bookId) {
+      setError("Please upload a PDF or load an existing book_id first.");
+      return;
+    }
+    if (!selectedAssetId) {
+      setError("Please configure an API asset in Account.");
+      return;
+    }
+    if (!selectedAssetModel) {
+      setError("Please select a model.");
+      return;
+    }
+    setStartingParse(true);
+    setError(null);
+    setRunError(null);
+    try {
+      await processBook(bookId, "custom", selectedAssetId, selectedAssetModel);
+      setParseRequested(true);
+    } catch (err: any) {
+      setError(err.message || "Failed to start parsing.");
+    } finally {
+      setStartingParse(false);
+    }
   };
 
   const handlePublish = async () => {
@@ -838,6 +867,23 @@ export default function Home() {
                     disabled={uploading}
                   />
                 </label>
+                <div className="parse-actions">
+                  <button
+                    className="primary"
+                    type="button"
+                    onClick={handleStartParse}
+                    disabled={startingParse || isParsing}
+                  >
+                    {startingParse || isParsing ? "Parsing..." : "Start Parse"}
+                  </button>
+                  <span className="muted parse-hint">
+                    {uploadedFileName
+                      ? `Uploaded: ${uploadedFileName}`
+                      : bookId
+                        ? "book_id loaded. Ready to parse."
+                        : "Upload a PDF or load a book_id first."}
+                  </span>
+                </div>
                 <label className="field">
                   <span>已有 book_id</span>
                   <div className="input-row">

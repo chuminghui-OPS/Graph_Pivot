@@ -434,6 +434,18 @@ body {
   gap: 8px;
 }
 
+.parse-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.parse-hint {
+  flex: 1;
+  text-align: right;
+}
+
 .ghost-actions {
   justify-content: flex-end;
 }
@@ -1141,6 +1153,12 @@ body {
 
 .primary:active {
   transform: translateY(1px);
+}
+
+.primary:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  box-shadow: none;
 }
 
 .ghost:hover {
