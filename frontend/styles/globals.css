@@ -286,7 +286,7 @@ body {
   display: grid;
   grid-template-columns: repeat(12, 1fr);
   gap: var(--gutter);
-  align-items: start;
+  align-items: stretch;
 }
 
 .control-card {
@@ -311,28 +311,41 @@ body {
 
 .control-left-stack {
   display: grid;
-  gap: 14px;
+  grid-template-rows: auto 1fr;
+  gap: 12px;
+  height: 100%;
 }
 
 .model-config-card .control-row {
-  padding: 8px 0;
+  padding: 7px 0;
 }
 
 .model-config-card .control-row select {
   min-width: 220px;
 }
 
+.upload-load-card {
+  padding: 14px;
+}
+
 .upload-load-card .form-grid {
-  gap: 14px;
+  gap: 10px;
+}
+
+.upload-load-split {
+  display: grid;
+  grid-template-columns: minmax(0, 1.45fr) minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
 }
 
 .split-block {
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
   background: #f8fafc;
-  padding: 12px;
+  padding: 10px;
   display: grid;
-  gap: 10px;
+  gap: 8px;
 }
 
 .split-block-title {
@@ -476,22 +489,24 @@ body {
 }
 
 .parse-actions {
-  display: flex;
-  flex-direction: column;
-  align-items: stretch;
+  display: grid;
+  grid-template-columns: minmax(140px, 190px) minmax(0, 1fr);
+  align-items: center;
   gap: 10px;
 }
 
 .parse-hint {
   text-align: left;
+  margin: 0;
 }
 
 .parse-start-btn {
-  width: 100%;
-  padding: 12px 18px;
-  font-size: 16px;
+  width: auto;
+  min-width: 160px;
+  padding: 10px 18px;
+  font-size: 18px;
   font-weight: 700;
-  letter-spacing: 0.5px;
+  letter-spacing: 0.6px;
   background: linear-gradient(135deg, #0f766e, #0ea5e9);
 }
 
@@ -509,17 +524,19 @@ body {
 
 .compact-status {
   padding: 12px 14px;
-  gap: 10px;
+  gap: 12px;
+  justify-content: space-between;
+  height: 100%;
 }
 
 .compact-status-head {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 12px;
 }
 
 .progress-ring {
-  width: 90px;
+  width: 84px;
   aspect-ratio: 1 / 1;
   border-radius: 50%;
   display: grid;
@@ -527,13 +544,9 @@ body {
   transition: background 0.25s ease;
 }
 
-.progress-ring.spinning {
-  animation: ringPulse 1.2s ease-in-out infinite;
-}
-
 .progress-ring-inner {
-  width: 68px;
-  height: 68px;
+  width: 63px;
+  height: 63px;
   border-radius: 50%;
   background: #fff;
   border: 1px solid rgba(148, 163, 184, 0.25);
@@ -563,6 +576,7 @@ body {
   font-weight: 600;
   color: var(--ink);
   line-height: 1.4;
+  min-height: 38px;
 }
 
 .compact-status-meta {
@@ -573,21 +587,12 @@ body {
 .compact-status-actions {
   display: flex;
   justify-content: flex-end;
+  margin-top: auto;
 }
 
 .compact-publish {
-  padding: 7px 13px;
+  padding: 7px 12px;
   box-shadow: none;
-}
-
-@keyframes ringPulse {
-  0%,
-  100% {
-    transform: scale(1);
-  }
-  50% {
-    transform: scale(1.04);
-  }
 }
 
 .workspace {
@@ -1089,6 +1094,19 @@ body {
 
   .control-left-stack {
     gap: 12px;
+  }
+
+  .upload-load-split {
+    grid-template-columns: 1fr;
+  }
+
+  .parse-actions {
+    grid-template-columns: 1fr;
+    align-items: stretch;
+  }
+
+  .parse-start-btn {
+    width: 100%;
   }
 
   .workspace {

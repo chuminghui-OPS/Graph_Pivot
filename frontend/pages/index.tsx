@@ -264,7 +264,6 @@ export default function Home() {
     ["FAILED", "SKIPPED_TOO_LARGE", "TIMEOUT"].includes(chapter.status)
   );
   const isParsing = (parseRequested && totalChapters === 0) || !!processingChapter;
-  const shouldSpin = Boolean(bookId) && isParsing;
   const ringValue = Math.max(0, Math.min(100, Math.round(progressPercent)));
   const selectedAsset = assets.find((item) => item.id === selectedAssetId) || null;
   const assetModels = selectedAsset?.models || [];
@@ -843,7 +842,7 @@ export default function Home() {
               <div className="panel status-card compact-status">
                 <div className="compact-status-head">
                   <div
-                    className={`progress-ring ${shouldSpin ? "spinning" : ""}`}
+                    className="progress-ring"
                     style={{
                       background: `conic-gradient(var(--accent) ${ringValue}%, rgba(148, 163, 184, 0.25) 0)`
                     }}
@@ -884,6 +883,7 @@ export default function Home() {
                 <div className="muted">PDF 上传或直接加载已有 book_id</div>
               </div>
               <div className="form-grid">
+                <div className="upload-load-split">
                 <div className="split-block">
                   <div className="split-block-title">导入新书</div>
                   <label className="field">
@@ -942,6 +942,7 @@ export default function Home() {
                       </button>
                     </div>
                   </label>
+                </div>
                 </div>
                 <div className="input-row ghost-actions">
                   <button
