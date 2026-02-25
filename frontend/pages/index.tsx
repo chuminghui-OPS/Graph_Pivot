@@ -784,7 +784,8 @@ export default function Home() {
           ) : null}
 
           <section className="control-grid">
-            <div className="panel control-card model-config-card span-5">
+            <div className="control-left-stack span-5">
+              <div className="panel control-card model-config-card">
               <div className="panel-title spaced">
                 <div>
                   <div className="label-strong">模型配置</div>

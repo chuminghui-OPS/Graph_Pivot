@@ -309,6 +309,11 @@ body {
   grid-column: span 7;
 }
 
+.control-left-stack {
+  display: grid;
+  gap: 14px;
+}
+
 .model-config-card .control-row {
   padding: 8px 0;
 }
